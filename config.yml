@@ -1,0 +1,20 @@
+engine:
+  speed: 4
+  autoclose: False
+recorder:
+  file: record/test.pickle
+  record:
+    - detector
+webcam:
+  deviceIndex: 2
+  width: 640
+  height: 480
+  dtype: u8
+  flip: True
+preprocessor:
+  finger_idx: 8
+  min_speed_corner: 0.02
+  reset_speed_corner: 0.024
+  buffer_size: 140
+  max_lost: 10
+  min_steps: 15

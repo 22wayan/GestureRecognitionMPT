@@ -1,0 +1,4 @@
+hmmclassifier @ git+https://github.com/jaboll-ai/hmmclassifier
+mediapipe==0.10.32
+signalhub @ git+https://github.com/jaboll-ai/SignalHub.git@pyproject
+tqdm==4.67.3
