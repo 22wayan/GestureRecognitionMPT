@@ -12,7 +12,7 @@ author = 'Jannis Bollien, Dennis Müller'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
-
+autoclass_content = "both"
 extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon"
