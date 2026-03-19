@@ -1218,7 +1218,7 @@ wheels = [
 [[package]]
 name = "signalhub"
 version = "0.1.0"
-source = { git = "https://github.com/jaboll-ai/SignalHub.git?rev=pyproject#8986e95c685877e9880ab519b6c16b5398dad368" }
+source = { git = "https://github.com/jaboll-ai/SignalHub.git?rev=pyproject#2d448869868687d1e4b0506153c8d6c6064d5997" }
 dependencies = [
     { name = "attrs" },
     { name = "jsonschema" },

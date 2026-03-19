@@ -53,7 +53,13 @@ class TrailMarker(Module):
         - ``outputSchema``
         - ``name`` des Moduls
         """
-        pass
+        super().__init__(
+            inputSignals=["config", "detector"],
+            outputSchema={"type": "object", "properties": {outputSignal: {}}},
+            name="trailmarker",
+        )
+
+        self.outputSignal = outputSignal
 
     def start(self, data):
         """

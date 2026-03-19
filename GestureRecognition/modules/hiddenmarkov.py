@@ -66,7 +66,14 @@ class HMMModule(Module):
         - ``outputSchema``
         - ``name`` des Moduls
         """
-        pass
+        super().__init__(
+            inputSignals=["config", "preprocessor"],
+            outputSchema={"type": "object", "properties": {outputSignal: {}}},
+            name="hiddenmarkov",
+            **kwargs
+        )
+
+        self.outputSignal = outputSignal
 
     def start(self, data):
         """

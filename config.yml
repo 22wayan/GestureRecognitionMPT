@@ -3,7 +3,10 @@ engine:
   autoclose: False
 recorder:
   file: record/test.pickle
-  record:
+  replay:
+    - trailmarker
+    - preprocessor
+    - hiddenmarkov
     - detector
 webcam:
   deviceIndex: 2

@@ -58,7 +58,13 @@ class Preprocessor(Module):
         - ``outputSchema``
         - ``name`` des Moduls
         """
-        pass
+        super().__init__(
+            inputSignals=["config", "detector"],
+            outputSchema={"type": "object", "properties": {outputSignal: {}}},
+            name="preprocessor",
+        )
+
+        self.outputSignal = outputSignal
 
     def start(self, data):
         """
