@@ -1,8 +1,10 @@
 # GestureRecognitionMPT
 
-Ein kleines Projekt zur Gestenerkennung auf Basis von Hand-Landmarks.
+MPT Projekt zur Erkennung von Gesten in Webcam-Daten.
 
-Das Projekt demonstriert eine modulare Pipeline zur Erkennung von Gesten aus Webcam-Daten. Dafür werden Hand-Landmarks extrahiert und anschließend mit einem Hidden-Markov-Modell (HMM) klassifiziert.
+Dafür werden Hand-Landmarks extrahiert und anschließend mit einem [Hidden-Markov-Modell](https://de.wikipedia.org/wiki/Hidden_Markov_Model) (HMM) klassifiziert.
+
+Die Online-Dokumentation zur Bearbeitung des Projekts finden sie [hier](https://jaboll-ai.github.io/GestureRecognitionMPT).
 
 ## Pipeline
 
@@ -11,7 +13,7 @@ Die Verarbeitung erfolgt über mehrere Module:
 Webcam → HandDetector → Preprocessor → HMMModule
 ```
 - **HandDetector**
-  Erkennt Hände im Kamerabild und extrahiert deren Landmarken.
+  Erkennt Hände im Kamerabild und extrahiert deren Landmarken. (optional: Darstellung der Hand)
 
 - **Preprocessor**
   Sammelt und normalisiert Fingertrajektorien über mehrere Frames.

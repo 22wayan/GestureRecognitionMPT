@@ -11,7 +11,7 @@ GestureRecognitionMPT
    :caption: Module:
 
    handdetector
-   hiddenmarkov
    preprocessor
    trailmarker
+   hiddenmarkov
 
