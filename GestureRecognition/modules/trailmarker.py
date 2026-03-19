@@ -39,27 +39,20 @@ class TrailMarker(Module):
 
         ``outputSchema={"type": "object", "properties": {outputSignal: {}}}``
 
+        .. note::
+           Die Basisklasse :class:`Module` erwartet beim Aufruf von
+           ``super().__init__`` unter anderem:
+
+           - ``inputSignals``
+           - ``outputSchema``
+           - ``name`` des Moduls
+
         Parameters
         ----------
         outputSignal : str, optional
             Name des erzeugten Output-Signals.
-
-        Notes
-        -----
-        Die Basisklasse :class:`Module` erwartet beim Aufruf von
-        ``super().__init__`` unter anderem:
-
-        - ``inputSignals``
-        - ``outputSchema``
-        - ``name`` des Moduls
         """
-        super().__init__(
-            inputSignals=["config", "detector"],
-            outputSchema={"type": "object", "properties": {outputSignal: {}}},
-            name="trailmarker",
-        )
-
-        self.outputSignal = outputSignal
+        pass
 
     def start(self, data):
         """
@@ -83,6 +76,14 @@ class TrailMarker(Module):
           Webcam-Parameter.
         - Für den Zugriff auf verschachtelte Konfigurationswerte kann
           :meth:`get_nested_key` verwendet werden.
+
+        .. tip::
+           Eine ``deque`` ist ideal für Trajektorien,
+           da sie effizient alte Punkte entfernt.
+
+        .. note::
+           Initialisiere hier nur Zustände und Parameter,
+           keine eigentliche Verarbeitung.
 
         Parameters
         ----------
@@ -119,6 +120,19 @@ class TrailMarker(Module):
         - Für die Visualisierung kann :meth:`line` der :class:`GALY`
           verwendet werden.
 
+        .. tip::
+           Typischer Ablauf:
+           1. Landmark extrahieren
+           2. Punkt speichern
+           3. Trajektorie aktualisieren
+           4. Linien zwischen Punkten zeichnen
+
+        .. warning::
+           Achte darauf, dass:
+           - keine leeren Landmark-Daten verarbeitet werden
+           - die Trajektorie nicht unendlich wächst
+           - verlorene Frames sinnvoll behandelt werden
+
         Parameters
         ----------
         data : dict
@@ -149,6 +163,10 @@ class TrailMarker(Module):
         Hinweise
         --------
         - In vielen Fällen ist keine spezielle Bereinigung notwendig.
+
+        .. note::
+           Diese Methode ist optional, kann aber sinnvoll sein,
+           wenn Zustände explizit zurückgesetzt werden sollen.
 
         Parameters
         ----------

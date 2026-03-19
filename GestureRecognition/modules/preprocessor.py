@@ -44,27 +44,20 @@ class Preprocessor(Module):
 
         ``outputSchema={"type": "object", "properties": {outputSignal: {}}}``
 
+        .. note::
+           Die Basisklasse :class:`Module` erwartet beim Aufruf von
+           ``super().__init__`` unter anderem:
+
+           - ``inputSignals``
+           - ``outputSchema``
+           - ``name`` des Moduls
+
         Parameters
         ----------
         outputSignal : str, optional
             Name des erzeugten Output-Signals.
-
-        Notes
-        -----
-        Die Basisklasse :class:`Module` erwartet beim Aufruf von
-        ``super().__init__`` unter anderem:
-
-        - ``inputSignals``
-        - ``outputSchema``
-        - ``name`` des Moduls
         """
-        super().__init__(
-            inputSignals=["config", "detector"],
-            outputSchema={"type": "object", "properties": {outputSignal: {}}},
-            name="preprocessor",
-        )
-
-        self.outputSignal = outputSignal
+        pass
 
     def start(self, data):
         """
@@ -86,6 +79,15 @@ class Preprocessor(Module):
           verlorener Frames oder die minimale Anzahl benötigter Punkte.
         - Zum Zugriff auf verschachtelte Konfigurationswerte kann
           :meth:`get_nested_key` verwendet werden.
+
+        .. tip::
+           Eine ``deque`` mit fester Länge ist ideal für Trajektorien,
+           da alte Punkte automatisch verworfen werden.
+
+        .. note::
+           Trenne klar zwischen:
+           - Initialisierung von Parametern (``start``)
+           - Verarbeitung von Daten (``step``)
 
         Parameters
         ----------
@@ -127,6 +129,19 @@ class Preprocessor(Module):
         - Berechnung eines Zentrums der Trajektorie
         - Skalierung oder Normalisierung der Punkte
 
+        .. tip::
+           Arbeite schrittweise:
+           1. Prüfen, ob Landmarken vorhanden sind
+           2. Fingerposition extrahieren
+           3. In Trajektorie speichern
+           4. Optional normalisieren
+
+        .. warning::
+           Achte darauf, dass:
+           - genügend Punkte vorhanden sind
+           - keine fehlerhaften Frames verarbeitet werden
+           - verlorene Frames sinnvoll behandelt werden
+
         Parameters
         ----------
         data : dict
@@ -157,6 +172,10 @@ class Preprocessor(Module):
         Hinweise
         --------
         - In vielen Fällen ist keine spezielle Bereinigung notwendig.
+
+        .. note::
+           Diese Methode ist optional, kann aber relevant werden,
+           wenn interne Zustände explizit zurückgesetzt werden sollen.
 
         Parameters
         ----------

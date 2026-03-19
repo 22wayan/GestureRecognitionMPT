@@ -46,6 +46,14 @@ class HMMModule(Module):
 
         ``outputSchema={"type": "object", "properties": {outputSignal: {}}}``
 
+        .. note::
+           Die Basisklasse :class:`Module` erwartet beim Aufruf von
+           ``super().__init__`` unter anderem:
+
+           - ``inputSignals``
+           - ``outputSchema``
+           - ``name`` des Moduls
+
         Parameters
         ----------
         outputSignal : str, optional
@@ -56,24 +64,8 @@ class HMMModule(Module):
 
         **kwargs
             Weitere Parameter, die an :class:`Module` weitergegeben werden.
-
-        Notes
-        -----
-        Die Basisklasse :class:`Module` erwartet beim Aufruf von
-        ``super().__init__`` unter anderem:
-
-        - ``inputSignals``
-        - ``outputSchema``
-        - ``name`` des Moduls
         """
-        super().__init__(
-            inputSignals=["config", "preprocessor"],
-            outputSchema={"type": "object", "properties": {outputSignal: {}}},
-            name="hiddenmarkov",
-            **kwargs
-        )
-
-        self.outputSignal = outputSignal
+        pass
 
     def start(self, data):
         """
@@ -91,6 +83,16 @@ class HMMModule(Module):
           die ein gespeichertes Modell rekonstruiert.
         - Das geladene Modell sollte als Attribut des Moduls gespeichert
           werden, damit es in :meth:`step` verwendet werden kann.
+
+        .. tip::
+           Trenne klar zwischen:
+           - Modell laden (``start``)
+           - Modell anwenden (``step``)
+
+        .. warning::
+           Stelle sicher, dass:
+           - der Pfad korrekt ist
+           - das Modell zum erwarteten Datenformat passt
 
         Parameters
         ----------
@@ -129,6 +131,23 @@ class HMMModule(Module):
         - Für die Skalierung der Zeichenebene können Parameter aus der
           Konfiguration über :meth:`get_nested_key` gelesen werden.
 
+        .. tip::
+           Typischer Ablauf:
+           1. Daten prüfen (existiert eine Sequenz?)
+           2. Modell anwenden
+           3. Scores interpretieren
+           4. Ergebnis visualisieren
+
+        .. note::
+           Du entscheidest selbst:
+           - wie du Scores darstellst
+           - ob du nur das beste Label oder mehrere Kandidaten zeigst
+
+        .. warning::
+           Achte darauf, dass:
+           - das Eingabeformat exakt zum Trainingsformat passt
+           - keine leeren oder fehlerhaften Sequenzen verarbeitet werden
+
         Parameters
         ----------
         data : dict
@@ -160,11 +179,13 @@ class HMMModule(Module):
         --------
         - In vielen Fällen ist keine spezielle Bereinigung notwendig.
 
+        .. note::
+           Diese Methode ist optional, kann aber relevant werden,
+           wenn Modelle oder externe Ressourcen verwaltet werden.
+
         Parameters
         ----------
         data : dict
             Letzte übergebene Daten des Frameworks.
         """
         pass
-
-

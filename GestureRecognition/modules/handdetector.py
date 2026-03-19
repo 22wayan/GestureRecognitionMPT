@@ -80,27 +80,20 @@ class HandDetector(Module):
 
         ``outputSchema={"type": "object", "properties": {outputSignal: {}}}``
 
+        .. note::
+           Die Basisklasse :class:`Module` erwartet beim Aufruf von
+           ``super().__init__`` unter anderem:
+
+           - ``inputSignals``
+           - ``outputSchema``
+           - ``name`` des Moduls
+
         Parameters
         ----------
         outputSignal : str, optional
             Name des erzeugten Output-Signals.
-
-        Notes
-        -----
-        Die Basisklasse :class:`Module` erwartet beim Aufruf von
-        ``super().__init__`` unter anderem:
-
-        - ``inputSignals``
-        - ``outputSchema``
-        - ``name`` des Moduls
         """
-        super().__init__(
-            inputSignals=["config", "webcam"],
-            outputSchema={"type": "object", "properties": {outputSignal: {}}},
-            name="detector",
-        )
-
-        self.outputSignal = outputSignal
+        pass
 
     def start(self, data):
         """
@@ -117,6 +110,10 @@ class HandDetector(Module):
           https://colab.research.google.com/github/googlesamples/mediapipe/blob/main/examples/hand_landmarker/python/hand_landmarker.ipynb
         - Laden sie wie im Artikel beschrieben das Modell ein und speichern sie das detector
           Objekt in einem Attribut des Moduls. z.B. ``self.detector``
+
+        .. tip::
+           Halte die Initialisierung strikt getrennt von der Verarbeitung.
+           In ``start`` sollte nur vorbereitet, nicht gerechnet werden.
 
         Parameters
         ----------
@@ -143,7 +140,7 @@ class HandDetector(Module):
         - Greife auf das ``webcam`` Signal zu, um das aktuelle Bild zu erhalten.
         - Das Bild liegt typischerweise als :class:`np.ndarray` vor.
         - Für MediaPipe muss das Bild ggf. in ein geeignetes Format
-          konvertiert werden. (:class:`mp.Image`)
+          konvertiert werden (:class:`mp.Image`).
         - Anschließend kann das Bild an den Handdetektor übergeben werden.
         - Das Ergebnis enthält Informationen über erkannte Hände sowie
           deren Landmarken.
@@ -152,6 +149,18 @@ class HandDetector(Module):
         - Für die Visualisierung kann ein :class:`GALY` Objekt verwendet werden.
         - Die Funktion :func:`draw_hand_landmarks` kann genutzt werden,
           um Landmarken und Verbindungen darzustellen.
+
+        .. tip::
+           Arbeite schrittweise:
+           1. Bild holen
+           2. Format konvertieren
+           3. Detektion durchführen
+           4. Ergebnis verarbeiten / visualisieren
+
+        .. warning::
+           Achte darauf, dass:
+           - das Bildformat korrekt ist
+           - die Detektion pro Frame effizient bleibt
 
         Parameters
         ----------
@@ -166,7 +175,6 @@ class HandDetector(Module):
         dict
             Soll das Ergebnis der Handdetektion sowie optional ein
             :class:`GALY` Objekt für die Visualisierung enthalten.
-            Es empfiehlt sich das gesamte Detektionsergebnis zurück zu geben.
 
             Beispiel:
 
@@ -184,6 +192,10 @@ class HandDetector(Module):
         Hinweise
         --------
         - In vielen Fällen ist keine spezielle Bereinigung notwendig.
+
+        .. note::
+           Diese Methode ist optional, kann aber wichtig werden,
+           wenn externe Ressourcen (z. B. Modelle, Streams) verwendet werden.
 
         Parameters
         ----------

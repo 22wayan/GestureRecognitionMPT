@@ -4,14 +4,14 @@
    contain the root `toctree` directive.
 
 GestureRecognitionMPT
-===================================
+=====================
 
 .. toctree::
    :maxdepth: 2
    :caption: Module:
 
-   handdetector
-   preprocessor
-   trailmarker
-   hiddenmarkov
+   modules
+   labeling
+   visualization
+   hmmclassifier
 
