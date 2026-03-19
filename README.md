@@ -36,4 +36,4 @@ Webcam → HandDetector → Preprocessor → HMMModule
 </table>
 
 
-![Dataset](dataset.png)
+<img width="830" height="1430" alt="Dataset" src="https://github.com/user-attachments/assets/dd61fa9d-353a-46ed-adea-7a28238e1f9e" />
