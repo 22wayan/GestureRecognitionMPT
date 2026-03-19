@@ -3,12 +3,15 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-GestureRecognitionMPT documentation
+GestureRecognitionMPT
 ===================================
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
+   :caption: Module:
 
-   GestureRecognition
+   handdetector
+   hiddenmarkov
+   preprocessor
+   trailmarker
 
