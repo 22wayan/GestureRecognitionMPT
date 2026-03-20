@@ -106,8 +106,8 @@ class HandDetector(Module):
 
         Hinweise
         --------
-        - MediaPipe stellt eine Hand-Landmark-Erkennung bereit.
-          https://colab.research.google.com/github/googlesamples/mediapipe/blob/main/examples/hand_landmarker/python/hand_landmarker.ipynb
+        - MediaPipe stellt eine Hand-Landmark-Erkennung
+          `bereit <https://colab.research.google.com/github/googlesamples/mediapipe/blob/main/examples/hand_landmarker/python/hand_landmarker.ipynb>`_.
         - Laden sie wie im Artikel beschrieben das Modell ein und speichern sie das detector
           Objekt in einem Attribut des Moduls. z.B. ``self.detector``
 
