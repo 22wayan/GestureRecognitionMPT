@@ -1,6 +1,6 @@
 def data_labeling(times: int, label: str):
     """
-    TODO: Datenerfassung für Gesten (SignalHub)
+    TODO: data_labeling: Datenerfassung für Gesten (SignalHub)
 
     Ziel:
     -----
@@ -78,7 +78,7 @@ def data_labeling(times: int, label: str):
 
 def dataset_building(output_path):
     """
-    TODO: Trainingsdatensatz aus aufgenommenen Gesten erstellen
+    TODO: dataset_building: Trainingsdatensatz aus aufgenommenen Gesten erstellen
 
     Ziel:
     -----
