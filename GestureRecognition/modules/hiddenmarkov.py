@@ -1,4 +1,3 @@
-from hmmclassifier import HMMClassifier
 from SignalHub import GALY, bgr, get_nested_key, Module
 
 

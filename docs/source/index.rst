@@ -59,6 +59,8 @@ Implementieren Sie Module zur:
    HMM-Classifier sinnvoll verarbeitet werden kann. An diesem Schritt
    sollten am Anfang alle Teilnehmer sinnvoll beteiligt sein.
 
+Implementierungshilfen: :doc:`modules`
+
 
 2. Datenerfassung (Labeling)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -85,6 +87,7 @@ Erweiterung:
       - einfaches Verwerfen schlechter Sequenzen
       - klare Datenorganisation
 
+Implementierungshilfen: :doc:`labeling`
 
 3. Datenexploration & Visualisierung
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -112,7 +115,7 @@ Zusätzlich:
 
    Nutzen Sie Visualisierung aktiv zum Debugging.
 
-
+Implementierungshilfen: :doc:`visualization`
 
 
 4. HMMClassifier (Training & Inferenz)
@@ -142,6 +145,7 @@ Erweiterung (optional):
    - Grid Search für Hyperparameter (z. B. Anzahl Zustände, Modellstruktur)
    - Vergleich verschiedener Modellkonfigurationen
 
+Implementierungshilfen: :doc:`hmmclassifier`
 
 5. Live-Modus
 ~~~~~~~~~~~~~
@@ -205,7 +209,7 @@ Sie müssen in der Lage sein, Ihr System zu erklären:
 
 .. toctree::
    :maxdepth: 2
-   :caption: Implemtierung:
+   :caption: Implementierungshilfen:
 
    modules
    labeling
