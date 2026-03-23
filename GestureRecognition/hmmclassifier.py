@@ -6,7 +6,7 @@ class HMMClassifier:
     -----
     Entwickle einen Klassifikator, der zeitliche Sequenzen mit Hilfe von
     Hidden-Markov-Modellen (HMMs) klassifiziert. Für HMMs können libraries wie
-    :class:`hmmlearn` benutzt werden
+    :mod:`hmmlearn` benutzt werden
 
     Grundidee:
     ----------
@@ -74,14 +74,14 @@ class HMMClassifier:
 
         .. note::
            Die konkrete Umsetzung ist offen:
-           - Wie genau du Daten aufteilst
-           - Wie du dein Modell initialisierst
-           - Welche Hyperparameter du verwendest
+            - Wie genau du Daten aufteilst
+            - Wie du dein Modell initialisierst
+            - Welche Hyperparameter du verwendest
 
         .. warning::
            Achte darauf, dass:
-           - ``lengths`` zu ``X`` passen
-           - Labels korrekt zu Sequenzen zugeordnet sind
+            - ``lengths`` zu ``X`` passen
+            - Labels korrekt zu Sequenzen zugeordnet sind
 
         Erweiterung:
         ------------
@@ -118,13 +118,13 @@ class HMMClassifier:
 
         .. note::
            Du entscheidest selbst:
-           - Welcher Score verwendet wird
-           - Wie du mehrere Sequenzen behandelst
+            - Welcher Score verwendet wird
+            - Wie du mehrere Sequenzen behandelst
 
         .. warning::
            Stelle sicher, dass:
-           - Die Reihenfolge der Klassen konsistent ist
-           - Scores vergleichbar sind
+            - Die Reihenfolge der Klassen konsistent ist
+            - Scores vergleichbar sind
 
         Returns
         -------
@@ -144,8 +144,7 @@ class HMMClassifier:
         Anforderungen / Ideen:
         ----------------------
         - Nutze deine ``decision_function``
-        - Wähle für jede Sequenz:
-            Klasse mit bestem Score
+        - Wähle für jede Sequenz die Klasse mit bestem Score
 
         .. tip::
            Typischerweise:
@@ -153,8 +152,8 @@ class HMMClassifier:
 
         .. note::
            Achte darauf, dass:
-           - Klassenreihenfolge konsistent ist
-           - Rückgabewerte klar interpretierbar sind
+            - Klassenreihenfolge konsistent ist
+            - Rückgabewerte klar interpretierbar sind
 
         Erweiterung:
         ------------

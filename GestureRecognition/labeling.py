@@ -26,7 +26,7 @@ def data_labeling(times: int, label: str):
 
     .. tip::
 
-       Die Funktion ``getch()`` ist sehr hilfreich, um einzelne Tastendrücke
+       Die Funktion ``getch()`` (Aus dem Modul Linux :mod:`getch` oder bei Windows :mod:`msvcrt`) ist sehr hilfreich, um einzelne Tastendrücke
        direkt auszulesen (ohne Enter). Damit kannst du dir ein schnelles
        Labeling-Interface bauen.
 

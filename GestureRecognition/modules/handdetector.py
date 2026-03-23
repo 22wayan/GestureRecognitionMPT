@@ -152,15 +152,15 @@ class HandDetector(Module):
 
         .. tip::
            Arbeite schrittweise:
-           1. Bild holen
-           2. Format konvertieren
-           3. Detektion durchführen
-           4. Ergebnis verarbeiten / visualisieren
+            1. Bild holen
+            2. Format konvertieren
+            3. Detektion durchführen
+            4. Ergebnis verarbeiten / visualisieren
 
         .. warning::
-           Achte darauf, dass:
-           - das Bildformat korrekt ist
-           - die Detektion pro Frame effizient bleibt
+            Achte darauf, dass:
+                - das Bildformat korrekt ist (RGB vs. BGR)
+                - die Detektion pro Frame effizient bleibt (Live-Demo)
 
         Parameters
         ----------

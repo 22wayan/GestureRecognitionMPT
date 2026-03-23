@@ -23,14 +23,14 @@ def visualize_dataset():
 
     .. tip::
        Ein einfacher Ansatz:
-       - Plotte Trajektorien (z. B. x/y-Koordinaten)
-       - Zeige mehrere Beispiele pro Klasse übereinander
+         - Plotte Trajektorien (z. B. x/y-Koordinaten)
+         - Zeige mehrere Beispiele pro Klasse übereinander
 
     .. note::
        Du kannst selbst entscheiden:
-       - Wie viele Sequenzen du anzeigst
-       - Welche Features du visualisierst
-       - Ob du interaktive Elemente einbaust
+         - Wie viele Sequenzen du anzeigst
+         - Welche Features du visualisierst
+         - Ob du interaktive Elemente einbaust
 
     .. tip::
        Interaktivität (z. B. Klick auf eine Sequenz) kann hilfreich sein,
@@ -77,8 +77,8 @@ def evaluate_classifier():
 
     .. tip::
        Eine Confusion Matrix zeigt dir:
-       - Welche Klassen gut erkannt werden
-       - Wo dein Modell Fehler macht
+         - Welche Klassen gut erkannt werden
+         - Wo dein Modell Fehler macht
 
     .. warning::
        Testdaten dürfen **nicht** aus dem Training stammen!
@@ -92,9 +92,9 @@ def evaluate_classifier():
 
     .. note::
        Schlechte Performance liegt oft an:
-       - schlechten Trainingsdaten
-       - zu wenigen Beispielen
-       - ungeeigneten Features
+         - schlechten Trainingsdaten
+         - zu wenigen Beispielen
+         - ungeeigneten Features
 
     Erweiterung (optional):
     -----------------------
@@ -127,12 +127,12 @@ def replay_recordings():
 
     .. tip::
        Besonders hilfreich:
-       - Vergleiche mehrere Beispiele derselben Klasse
-       - Suche nach inkonsistenten Bewegungen
+         - Vergleiche mehrere Beispiele derselben Klasse
+         - Suche nach inkonsistenten Bewegungen
 
     .. warning::
        Schlechte oder inkonsistente Aufnahmen führen fast immer zu
-       schlechten Modellen – überprüfe deine Daten frühzeitig!
+       schlechten Modellen. Überprüfe deine Daten frühzeitig!
 
     Abgabe:
     -------
