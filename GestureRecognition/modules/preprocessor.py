@@ -81,13 +81,13 @@ class Preprocessor(Module):
           :meth:`get_nested_key` verwendet werden.
 
         .. tip::
-           Eine ``deque`` mit fester Länge ist ideal für Trajektorien,
-           da alte Punkte automatisch verworfen werden.
+            Eine ``deque`` mit fester Länge ist ideal für Trajektorien,
+            da alte Punkte automatisch verworfen werden.
 
         .. note::
-           Trenne klar zwischen:
-           - Initialisierung von Parametern (``start``)
-           - Verarbeitung von Daten (``step``)
+            Trenne klar zwischen:
+              - Initialisierung von Parametern (``start``)
+              - Verarbeitung von Daten (``step``)
 
         Parameters
         ----------
@@ -130,17 +130,17 @@ class Preprocessor(Module):
         - Skalierung oder Normalisierung der Punkte
 
         .. tip::
-           Arbeite schrittweise:
-           1. Prüfen, ob Landmarken vorhanden sind
-           2. Fingerposition extrahieren
-           3. In Trajektorie speichern
-           4. Optional normalisieren
+            Arbeite schrittweise:
+              1. Prüfen, ob Landmarken vorhanden sind
+              2. Fingerposition extrahieren
+              3. In Trajektorie speichern
+              4. Optional normalisieren
 
         .. warning::
-           Achte darauf, dass:
-           - genügend Punkte vorhanden sind
-           - keine fehlerhaften Frames verarbeitet werden
-           - verlorene Frames sinnvoll behandelt werden
+            Achte darauf, dass:
+              - genügend Punkte vorhanden sind
+              - keine fehlerhaften Frames verarbeitet werden
+              - verlorene Frames sinnvoll behandelt werden
 
         Parameters
         ----------

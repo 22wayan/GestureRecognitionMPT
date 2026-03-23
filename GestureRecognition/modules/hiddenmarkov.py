@@ -85,13 +85,13 @@ class HMMModule(Module):
 
         .. tip::
            Trenne klar zwischen:
-           - Modell laden (``start``)
-           - Modell anwenden (``step``)
+            - Modell laden (``start``)
+            - Modell anwenden (``step``)
 
         .. warning::
            Stelle sicher, dass:
-           - der Pfad korrekt ist
-           - das Modell zum erwarteten Datenformat passt
+            - der Pfad korrekt ist
+            - das Modell zum erwarteten Datenformat passt
 
         Parameters
         ----------
@@ -132,20 +132,20 @@ class HMMModule(Module):
 
         .. tip::
            Typischer Ablauf:
-           1. Daten prüfen (existiert eine Sequenz?)
-           2. Modell anwenden
-           3. Scores interpretieren
-           4. Ergebnis visualisieren
+            1. Daten prüfen (existiert eine Sequenz?)
+            2. Modell anwenden
+            3. Scores interpretieren
+            4. Ergebnis visualisieren
 
         .. note::
            Du entscheidest selbst:
-           - wie du Scores darstellst
-           - ob du nur das beste Label oder mehrere Kandidaten zeigst
+            - wie du Scores darstellst
+            - ob du nur das beste Label oder mehrere Kandidaten zeigst
 
         .. warning::
            Achte darauf, dass:
-           - das Eingabeformat exakt zum Trainingsformat passt
-           - keine leeren oder fehlerhaften Sequenzen verarbeitet werden
+            - das Eingabeformat exakt zum Trainingsformat passt
+            - keine leeren oder fehlerhaften Sequenzen verarbeitet werden
 
         Parameters
         ----------

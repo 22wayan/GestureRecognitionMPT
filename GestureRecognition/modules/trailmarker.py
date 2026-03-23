@@ -121,17 +121,17 @@ class TrailMarker(Module):
           verwendet werden.
 
         .. tip::
-           Typischer Ablauf:
+          Typischer Ablauf:
            1. Landmark extrahieren
            2. Punkt speichern
            3. Trajektorie aktualisieren
            4. Linien zwischen Punkten zeichnen
 
         .. warning::
-           Achte darauf, dass:
-           - keine leeren Landmark-Daten verarbeitet werden
-           - die Trajektorie nicht unendlich wächst
-           - verlorene Frames sinnvoll behandelt werden
+            Achte darauf, dass:
+              - keine leeren Landmark-Daten verarbeitet werden
+              - die Trajektorie nicht unendlich wächst
+              - verlorene Frames sinnvoll behandelt werden
 
         Parameters
         ----------

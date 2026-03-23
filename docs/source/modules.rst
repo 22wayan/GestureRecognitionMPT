@@ -19,7 +19,7 @@ Preprocessor
    :members:
    :show-inheritance:
 
-HandDetector
+HMMModule
 ------------
 .. automodule:: GestureRecognition.modules.hiddenmarkov
    :members:
