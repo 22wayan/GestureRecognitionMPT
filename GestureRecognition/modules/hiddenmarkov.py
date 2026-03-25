@@ -64,7 +64,11 @@ class HMMModule(Module):
         **kwargs
             Weitere Parameter, die an :class:`Module` weitergegeben werden.
         """
-        pass
+        super().__init__(
+            inputSignals=["config", "preprocessor"],
+            outputSchema={"type": "object", "properties": {outputSignal: {}}},
+            name="hiddenmarkov",
+        )
 
     def start(self, data):
         """

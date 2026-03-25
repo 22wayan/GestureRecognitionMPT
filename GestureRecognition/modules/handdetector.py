@@ -93,7 +93,11 @@ class HandDetector(Module):
         outputSignal : str, optional
             Name des erzeugten Output-Signals.
         """
-        pass
+        super().__init__(
+            inputSignals=["config", "webcam"],
+            outputSchema={"type": "object", "properties": {outputSignal: {}}},
+            name="detector",
+        )
 
     def start(self, data):
         """

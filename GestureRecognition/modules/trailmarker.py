@@ -52,7 +52,11 @@ class TrailMarker(Module):
         outputSignal : str, optional
             Name des erzeugten Output-Signals.
         """
-        pass
+        super().__init__(
+            inputSignals=["config", "detector"],
+            outputSchema={"type": "object", "properties": {outputSignal: {}}},
+            name="trailmarker",
+        )
 
     def start(self, data):
         """

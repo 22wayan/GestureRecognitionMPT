@@ -1,4 +1,4 @@
-Visualisation des Dataset
+Visualisierung ihres Datensatzes
 =========================
 
 .. automodule:: GestureRecognition.visualization

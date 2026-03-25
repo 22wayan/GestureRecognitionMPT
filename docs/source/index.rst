@@ -31,7 +31,7 @@ Erkennung von Handgesten auf Basis von Hidden Markov Models (HMM).
           :width: 200px
 
 
-.. contents:: Die Bewertung erfolgt anhand folgender Kriterien
+.. contents:: Die Bewertung umfasst:
    :depth: 2
    :local:
 
@@ -211,6 +211,7 @@ Sie müssen in der Lage sein, Ihr System zu erklären:
    :maxdepth: 2
    :caption: Implementierungshilfen:
 
+   intro
    modules
    labeling
    visualization
