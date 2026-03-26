@@ -6,214 +6,268 @@
 GestureRecognitionMPT
 =====================
 
-Prüfungsleistung
-================
+Grundlagen der Gestenerkennung
+==============================
 
-In dieser Prüfung entwickeln Sie ein vollständiges System zur
-Erkennung von Handgesten auf Basis von Hidden Markov Models (HMM).
+Gestenerkennung ist ein Teilgebiet der Computer Vision und beschäftigt sich
+mit der automatischen Interpretation menschlicher Bewegungen, insbesondere
+von Händen und Körpern, durch algorithmische Verfahren. [1]_
 
-.. list-table::
-   :align: center
-   :widths: auto
-
-   * - .. image:: _static/hmm_d.gif
-          :width: 200px
-     - .. image:: _static/hmm_e.gif
-          :width: 200px
-     - .. image:: _static/hmm_g.gif
-          :width: 200px
-
-   * - .. image:: _static/hmm_h.gif
-          :width: 200px
-     - .. image:: _static/hmm_j.gif
-          :width: 200px
-     - .. image:: _static/hmm_k.gif
-          :width: 200px
+Das Ziel ist es, aus sensorischen Daten (z. B. Kamerabilder oder Landmarken)
+die zugrunde liegende Bedeutung einer Bewegung zu erkennen.
 
 
-.. contents:: Die Bewertung umfasst:
-   :depth: 2
-   :local:
+Statische vs. dynamische Gesten
+-------------------------------
 
-Die einzelnen Komponenten sind aufeinander aufbauend konzipiert und entsprechend zu dokumentieren.
-Sie müssen in der Lage sein, sowohl das Gesamtsystem auf abstrakter Ebene als auch Ihren spezifischen Beitrag im Detail zu erläutern.
+Ein zentrales Problem der Gestenerkennung ist die Unterscheidung zwischen
+statischen und dynamischen Gesten.
 
-Aufgabenübersicht
------------------
+- **Statische Gesten** bestehen aus einer einzelnen Pose (z. B. Handform)
+- **Dynamische Gesten** bestehen aus einer zeitlichen Sequenz von Bewegungen
 
-1. HandDetector & Preprocessor
+Dynamische Gesten sind deutlich komplexer, da sie nicht nur die Form,
+sondern auch den zeitlichen Verlauf berücksichtigen müssen.
+
+.. warning::
+
+   Die meisten realen Gesten sind **dynamisch** und können nicht als
+   einzelnes Bild korrekt erkannt werden.
+
+Dies führt zu einer der wichtigsten Herausforderungen:
+
+→ Gestenerkennung ist ein **Sequenzproblem**.
+
+
+Typischer Aufbau eines Gestenerkennungssystems
+----------------------------------------------
+
+Ein modernes System besteht typischerweise aus mehreren Stufen:
+
+1. **Detektion** (z. B. Handtracking)
+2. **Feature-Extraktion** (z. B. Landmarken, Trajektorien)
+3. **Sequenzmodellierung** (z. B. HMM, DTW, neuronale Netze)
+4. **Klassifikation**
+
+Diese Pipeline ist auch die Grundlage Ihrer Implementierung.
+
+
+Herausforderungen der Gestenerkennung
+-------------------------------------
+
+Die wichtigsten Probleme sind:
+
+- **Zeitliche Variation**
+  - gleiche Geste → unterschiedliche Geschwindigkeit
+- **Räumliche Variation**
+  - unterschiedliche Position, Skalierung
+- **Rauschen**
+  - Trackingfehler, Sensorrauschen
+- **Ähnliche Gesten**
+  - gleiche Form, aber unterschiedliche Bewegung
+
+Besonders dynamische Gesten enthalten viele Informationen
+und sind daher deutlich schwieriger zu modellieren.
+
+
+Historische Methoden
+--------------------
+
+Frühere Ansätze zur Gestenerkennung basierten häufig auf [2]_:
+
+- Template Matching
+- Regelbasierte Systeme
+- Finite State Machines
+- Dynamic Time Warping (DTW)
+
+Diese Methoden funktionieren gut für einfache oder klar strukturierte Daten,
+stoßen jedoch bei komplexen, variablen Sequenzen schnell an ihre Grenzen.
+
+
+Moderne Ansätze
+---------------
+
+Heute werden hauptsächlich zwei Klassen von Methoden verwendet:
+
+1. **Probabilistische Modelle**
+   - Hidden Markov Models (HMM)
+   - Gaussian Mixture Models
+
+2. **Deep Learning**
+   - Recurrent Neural Networks (RNN, LSTM)
+   - Transformer-basierte Modelle
+
+HMMs sind dabei besonders interessant, da sie:
+
+- effizient trainierbar sind
+- gut mit kleinen Datensätzen funktionieren
+- zeitliche Struktur explizit modellieren
+- einfach zu verstehen sind
+
+
+Warum Daten entscheidend sind
+-----------------------------
+
+Ein Gestenerkennungssystem ist nur so gut wie die Daten, auf denen es basiert.
+
+Im Gegensatz zu vielen klassischen Problemen hängt die Qualität der Ergebnisse
+hier nicht primär vom gewählten Modell ab, sondern maßgeblich von der Qualität,
+Struktur und Repräsentativität des Datensatzes.
+
+
+Datenerhebung und Labeling
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Ein zentraler Schritt ist die systematische Erhebung und Annotation von Daten.
+
+Dabei wird festgelegt:
+
+- welche Gestenklassen existieren
+- welche Aufnahmen zu welcher Klasse gehören
+- wie konsistent diese Klassen voneinander abgegrenzt sind
+
+Eine klare und konsistente Label-Struktur ist entscheidend, da das Modell
+ausschließlich aus diesen Zuordnungen lernt.
+
+Darüber hinaus ist es wichtig, eine effiziente Methodik zur Datenerhebung zu entwickeln:
+
+- Je mehr Daten verfügbar sind, desto robuster wird das Modell
+- Variationen in Geschwindigkeit, Ausführung und Position müssen abgedeckt werden
+- Schlechte oder inkonsistente Aufnahmen wirken sich direkt negativ auf die Modellleistung aus
+
+Ein effizienter Workflow zur Aufnahme und Organisation von Daten ermöglicht es,
+schnell größere und qualitativ hochwertige Datensätze zu erstellen.
+
+
+Visualisierung des Datensatzes
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Implementieren Sie Module zur:
+Die Visualisierung von Daten ist ein essenzieller Bestandteil des Entwicklungsprozesses.
 
-- Erkennung von Händen und Landmarken
-- Extraktion und Normalisierung von Fingertrajektorien
+Sie ermöglicht es, strukturelle Probleme im Datensatz frühzeitig zu erkennen:
 
-.. note::
+- Ausreißer (fehlerhafte oder untypische Sequenzen)
+- inkonsistente oder verrauschte Daten
+- falsche Skalierung oder Normalisierung
+- unerwartete Muster oder Artefakte
 
-   Diese Komponenten bilden die Grundlage für das gesamte System.
+Insbesondere bei zeitlichen Daten wie Trajektorien ist es oft schwierig,
+Probleme rein numerisch zu erkennen. Visualisierung macht diese direkt sichtbar.
 
-.. warning::
+Darüber hinaus hilft sie dabei:
 
-   Ihr Preprocessing muss so gestaltet sein, dass es später vom
-   HMM-Classifier sinnvoll verarbeitet werden kann. An diesem Schritt
-   sollten am Anfang alle Teilnehmer sinnvoll beteiligt sein.
-
-Implementierungshilfen: :doc:`modules`
+- die Qualität der Feature-Extraktion zu beurteilen
+- Unterschiede zwischen Klassen besser zu verstehen
+- Annahmen über die Daten zu überprüfen
 
 
-2. Datenerfassung (Labeling)
+Evaluation und Iteration
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Die Entwicklung eines Gestenerkennungssystems ist ein iterativer Prozess.
+
+Die Evaluation dient dazu:
+
+- die Modellleistung objektiv zu messen
+- Schwächen im Datensatz oder Modell zu identifizieren
+- gezielt Verbesserungen vorzunehmen
+
+Wichtige Aspekte sind:
+
+- Vergleich zwischen Klassen
+- Analyse von Fehlklassifikationen
+- Verständnis, warum bestimmte Gesten verwechselt werden
+
+Die Kombination aus:
+
+- guter Datenerhebung
+- systematischer Visualisierung
+- kontinuierlicher Evaluation
+
+führt in der Regel zu deutlich besseren Ergebnissen als die alleinige
+Optimierung des Modells.
+
+
+.. tip::
+
+   In der Praxis ist die Verbesserung der Datenqualität häufig effektiver
+   als die Verwendung komplexerer Modelle.
+
+Hidden Markov Models (HMM)
+--------------------------
+
+Hidden Markov Models sind probabilistische Modelle zur Beschreibung von
+Sequenzen.
+
+Grundidee:
+
+- Ein System befindet sich in einem von mehreren **Zuständen**
+- Zustände sind **nicht direkt beobachtbar** (hidden)
+- Jeder Zustand erzeugt Beobachtungen mit bestimmter Wahrscheinlichkeit
+
+Ein HMM besteht aus:
+
+- Zuständen (z. B. Phasen einer Geste)
+- Übergangswahrscheinlichkeiten (State → State)
+- Emissionswahrscheinlichkeiten (State → Beobachtung)
+
+
+Funktionsweise (vereinfacht)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Erstellen Sie ein System zur Aufnahme von Trainingsdaten.
+1. Eine Eingabesequenz (z. B. Trajektorie) wird beobachtet
+2. Für jede Klasse existiert ein eigenes HMM
+3. Für jedes Modell wird berechnet:
 
-Anforderungen:
-   - Neue Gesten sollen aufgezeichnet werden können
-   - Daten müssen strukturiert gespeichert werden
-   - Mehrere Klassen (Labels) müssen unterstützt werden
+   → Wie wahrscheinlich ist es, dass dieses Modell die Sequenz erzeugt hat?
 
-Erweiterung:
-   - Es können auch Abstände zwischen den Fingern uvm. als Feature verwendet werden
-
-.. note::
-
-   In der Prüfung werden neue Daten **live vom Prüfer aufgenommen**.
-   Ihr System muss darauf vorbereitet sein.
-
-.. tip::
-
-   Denken Sie über einen effizienten Workflow nach:
-      - schnelle Aufnahme
-      - einfaches Verwerfen schlechter Sequenzen
-      - klare Datenorganisation
-
-Implementierungshilfen: :doc:`labeling`
-
-3. Datenexploration & Visualisierung
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Sie müssen Ihren Datensatz analysieren und verstehen können.
-
-Beispiele:
-   - Visualisierung von Trajektorien (z. B. als Plot)
-   - Vergleich mehrerer Sequenzen pro Klasse
-
-.. figure:: _static/dataset.png
-   :width: 80%
-   :align: center
-
-   Beispielhafte Visualisierung eines Datensatzes mit mehreren Trajektorien pro Klasse.
-
-Zusätzlich:
-   - Darstellung der Modellperformance (z. B. Confusion Matrix)
-
-.. note::
-
-   Gute Modelle entstehen nur mit guten Daten.
-
-.. tip::
-
-   Nutzen Sie Visualisierung aktiv zum Debugging.
-
-Implementierungshilfen: :doc:`visualization`
+4. Die Klasse mit der höchsten Wahrscheinlichkeit wird gewählt
 
 
-4. HMMClassifier (Training & Inferenz)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Warum funktionieren HMMs gut für Gesten?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Implementieren Sie einen eigenen Klassifikator basierend auf
-Hidden Markov Models.
+Gesten sind zeitliche Prozesse — ähnlich wie Sprache.
 
-Anforderungen:
-   - Trainieren Sie ein Modell pro Klasse
-   - Klassifizieren Sie Sequenzen anhand ihrer Wahrscheinlichkeit
-   - Wählen Sie die Klasse mit dem besten Score
+HMMs sind genau für solche Probleme entwickelt worden:
 
-.. warning::
+- sie modellieren Sequenzen explizit
+- sie sind robust gegenüber Zeitverzerrungen
+- sie können mit variabler Länge umgehen
 
-   Der Klassifikator muss **selbst implementiert werden**.
-   Es reicht nicht, fertige Lösungen zu verwenden.
+HMMs wurden ursprünglich stark in der Spracherkennung eingesetzt,
+da Sprachsignale ebenfalls als zeitliche, stochastische Prozesse
+modelliert werden können.
 
-.. tip::
+Diese Eigenschaften machen sie ideal für:
 
-   Überlegen Sie:
-      - Wie strukturieren Sie Ihre Trainingsdaten?
-      - Wie vergleichen Sie Modelle?
-      - Wie gehen Sie mit Sequenzlängen um?
-
-Erweiterung (optional):
-   - Grid Search für Hyperparameter (z. B. Anzahl Zustände, Modellstruktur)
-   - Vergleich verschiedener Modellkonfigurationen
-
-Implementierungshilfen: :doc:`hmmclassifier`
-
-5. Live-Modus
-~~~~~~~~~~~~~
-
-Ihr System soll in der Lage sein:
-   - Live-Daten aufzunehmen
-   - Diese direkt zu verarbeiten
-   - Eine Geste in Echtzeit zu klassifizieren
-
-.. note::
-
-   Dies ist der finale Integrationstest Ihres Systems.
-
-.. warning::
-
-   Alle Komponenten müssen hier zuverlässig zusammenspielen:
-      - Detector
-      - Preprocessor
-      - Classifier
+- Handbewegungen
+- Trajektorien
+- zeitliche Muster
 
 
-Bewertungskriterien
--------------------
+Zusammenfassung
+---------------
 
-Die Bewertung orientiert sich an folgenden Punkten:
-   - Funktionalität des Gesamtsystems
-   - Qualität und Struktur der Daten
-   - Verständlichkeit und Nachvollziehbarkeit
-   - Robustheit der Lösung
-   - Qualität der Modellperformance
+- Gestenerkennung ist ein **Sequenzproblem**
+- Dynamische Gesten sind deutlich komplexer als statische
+- Datenqualität ist entscheidend für den Erfolg
+- HMMs sind ein klassischer und effektiver Ansatz zur Modellierung von Gesten
 
-.. tip::
+Dieses theoretische Fundament ist entscheidend, um die praktische
+Implementierung im weiteren Verlauf zu verstehen.
 
-   Eine sehr gute Lösung zeichnet sich dadurch aus, dass:
-      - das System stabil läuft
-      - die Daten sauber aufbereitet sind
-      - die Ergebnisse nachvollziehbar erklärt werden können
-
-.. note::
-
-   Bonuspunkte können durch weiterführende Ansätze erzielt werden,
-   wie z. B. Hyperparameter-Optimierung oder zusätzliche Analysen.
-
-
-Dokumentation
--------------
-
-Sie müssen in der Lage sein, Ihr System zu erklären:
-   - Aufbau der Pipeline
-   - Entscheidungen im Design
-   - Interpretation der Ergebnisse
-
-.. warning::
-
-   Die hier gezeigte Struktur sowie die konkrete Implementierung der Module
-   stellen lediglich eine mögliche Referenz dar.
-
-   Abweichende Ansätze sind ausdrücklich erlaubt und erwünscht, solange
-   die funktionalen Anforderungen erfüllt werden. Eine identische Umsetzung
-   ist nicht erforderlich.
+Das MPT-Projekt
+===============
 
 .. toctree::
    :maxdepth: 2
-   :caption: Implementierungshilfen:
 
-   intro
-   modules
-   labeling
-   visualization
-   hmmclassifier
+   pruefung
 
+Literaturverzeichnis
+====================
+.. [1] https://de.wikipedia.org/wiki/Gestenerkennung
+.. [2] Celebi, S. (2013).
+       Gesture Recognition using Skeleton Data with Weighted Dynamic Time Warping.
+       Proceedings of the International Conference on Computer Vision Theory and Applications.
