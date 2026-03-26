@@ -199,9 +199,10 @@ Sie müssen in der Lage sein, Ihr System zu erklären:
    die funktionalen Anforderungen erfüllt werden. Eine identische Umsetzung
    ist nicht erforderlich.
 
+Implementierungshilfen
+======================
 .. toctree::
    :maxdepth: 2
-   :caption: Implementierungshilfen:
 
    intro
    modules

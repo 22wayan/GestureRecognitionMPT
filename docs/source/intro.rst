@@ -1,5 +1,5 @@
 Erste Schritte
---------------
+==============
 
 Bevor Sie mit der Implementierung beginnen, müssen Sie das Projekt lokal einrichten.
 
