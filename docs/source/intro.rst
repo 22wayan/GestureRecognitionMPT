@@ -41,7 +41,7 @@ Entpacken Sie die ``.7z``- oder ``.zip``-Datei in Ihren geklonten Projektordner.
 
 .. code-block:: bash
 
-    python main.py --mode replay --recorder <path_to_recording>
+    python main.py --mode replay --recorder <path_to_recording>.pkl
 
 Ersetzen Sie ``<path_to_recording>`` durch eine der bereitgestellten
 Recording-Dateien.
