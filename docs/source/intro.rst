@@ -5,6 +5,12 @@ Bevor Sie mit der Implementierung beginnen, müssen Sie das Projekt lokal einric
 
 1. Repository klonen:
 
+.. note::
+
+    Sie sollten mit ``Git`` und ``GitHub`` vertraut sein. Hier wird zu Demonstrationszwecken
+    das original Repository geklont. Wenn sie ``Git`` als ``Version-Control-System`` verwenden, klonen sie
+    selbstverständlich ihren Fork
+
 .. code-block:: bash
 
     git clone https://github.com/jaboll-ai/GestureRecognitionMPT
