@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import mediapipe as mp
+from pathlib import Path
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
@@ -104,20 +105,19 @@ class HandDetector(Module):
         Initialisierung des Moduls.
 
         Diese Methode wird einmal beim Start des Moduls ausgeführt.
+        Hier wird der MediaPipe HandLandmarker geladen.
 
-        Ziel ist es, das benötigte Handdetektionsmodell zu laden und
-        für die spätere Verarbeitung vorzubereiten.
+        MediaPipe arbeitet intern in zwei Schritten:
+        1. Palm detection: schnelle Handsuche im Bild
+        2. Landmark regression: 21 Handpunkte für jede erkannte Hand
 
-        Hinweise
-        --------
-        - MediaPipe stellt eine Hand-Landmark-Erkennung
-          `bereit <https://colab.research.google.com/github/googlesamples/mediapipe/blob/main/examples/hand_landmarker/python/hand_landmarker.ipynb>`_.
-        - Laden sie wie im Artikel beschrieben das Modell ein und speichern sie das detector
-          Objekt in einem Attribut des Moduls. z.B. ``self.detector``
-
-        .. tip::
-           Halte die Initialisierung strikt getrennt von der Verarbeitung.
-           In ``start`` sollte nur vorbereitet, nicht gerechnet werden.
+        Wir setzen ``num_hands=2``, damit ein bis zwei Hände erkannt werden.
+        Die Confidence-Werte sind bewusst moderat eingestellt:
+        - ``min_hand_detection_confidence=0.6``: zuverlässig, aber nicht zu streng,
+          damit die Live-Erkennung noch schnell arbeitet.
+        - ``min_hand_presence_confidence=0.5``: lässt schwächere Hände zu,
+          aber schützt vor völligen Fehlalarmen.
+        - ``min_tracking_confidence=0.5``: gute Balance zwischen Stabilität und Latenz.
 
         Parameters
         ----------
@@ -130,41 +130,44 @@ class HandDetector(Module):
         dict
             Ein leeres Dictionary.
         """
+        model_path = Path(__file__).resolve().parents[2] / "hand_landmarker.task"
+        detection_confidence = get_nested_key(
+            data,
+            "config/hand_detection_confidence",
+            0.6,
+        )
+        presence_confidence = get_nested_key(
+            data,
+            "config/hand_presence_confidence",
+            0.5,
+        )
+        tracking_confidence = get_nested_key(
+            data,
+            "config/hand_tracking_confidence",
+            0.5,
+        )
+
+        options = vision.HandLandmarkerOptions(
+            base_options=python.BaseOptions(model_asset_path=str(model_path)),
+            running_mode=vision.RunningMode.IMAGE,
+            num_hands=2,
+            min_hand_detection_confidence=detection_confidence,
+            min_hand_presence_confidence=presence_confidence,
+            min_tracking_confidence=tracking_confidence,
+        )
+        self.detector = vision.HandLandmarker.create_from_options(options)
         return {}
 
     def step(self, data):
         """
         Verarbeitung eines einzelnen Frames.
 
-        Ziel ist es, ein Kamerabild zu analysieren, Hände zu erkennen und
-        deren Landmarken zu bestimmen.
+        Hier wird jedes Bild von BGR nach RGB gewandelt, in ein MediaPipe
+        ``mp.Image`` gepackt und dann an den Handlandmarker gegeben.
 
-        Hinweise
-        --------
-        - Greife auf das ``webcam`` Signal zu, um das aktuelle Bild zu erhalten.
-        - Das Bild liegt typischerweise als :class:`np.ndarray` vor.
-        - Für MediaPipe muss das Bild ggf. in ein geeignetes Format
-          konvertiert werden (:class:`mp.Image`).
-        - Anschließend kann das Bild an den Handdetektor übergeben werden.
-        - Das Ergebnis enthält Informationen über erkannte Hände sowie
-          deren Landmarken.
-        - Für jede erkannte Hand können die Landmarken anschließend
-          visualisiert werden.
-        - Für die Visualisierung kann ein :class:`GALY` Objekt verwendet werden.
-        - Die Funktion :func:`draw_hand_landmarks` kann genutzt werden,
-          um Landmarken und Verbindungen darzustellen.
-
-        .. tip::
-           Arbeite schrittweise:
-            1. Bild holen
-            2. Format konvertieren
-            3. Detektion durchführen
-            4. Ergebnis verarbeiten / visualisieren
-
-        .. warning::
-            Achte darauf, dass:
-                - das Bildformat korrekt ist (RGB vs. BGR)
-                - die Detektion pro Frame effizient bleibt (Live-Demo)
+        Das Ergebnis liefert für jede erkannte Hand 21 normalisierte Punkte.
+        Wir zeichnen diese Punkte mit der vorhandenen Funktion
+        ``draw_hand_landmarks`` farbcodiert pro Finger.
 
         Parameters
         ----------
@@ -177,33 +180,44 @@ class HandDetector(Module):
         Returns
         -------
         dict
-            Soll das Ergebnis der Handdetektion sowie optional ein
-            :class:`GALY` Objekt für die Visualisierung enthalten.
-
-            Beispiel:
-
-            ``return {outputSignal: result, "galy": galy}``
+            ``detector`` : erkannte Hände und Landmarken
+            ``galy`` : Visualisierungsobjekt mit den gezeichneten Handverbindungen
         """
-        return {}
+        galy = GALY()
+        galy.layer("hands")
+
+        image = get_nested_key(data, "webcam", None)
+        if image is None:
+            return {"detector": {"hands": []}, "galy": galy}
+
+        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_image)
+
+        result = self.detector.detect(mp_image)
+        hand_landmarks = getattr(result, "hand_landmarks", []) or []
+
+        hands = []
+        for hand_index, landmarks in enumerate(hand_landmarks[:2]):
+            # MediaPipe liefert pro Hand 21 Landmarken.
+            hand_data = {
+                "id": hand_index,
+                "landmarks": [
+                    {"x": lm.x, "y": lm.y, "z": lm.z}
+                    for lm in landmarks
+                ],
+            }
+            hands.append(hand_data)
+            draw_hand_landmarks(landmarks, galy)
+
+        return {"detector": {"hands": hands}, "galy": galy}
 
     def stop(self, data):
         """
         Wird aufgerufen, wenn das Modul beendet wird.
 
-        Ziel ist es, bei Bedarf Ressourcen freizugeben oder interne
-        Zustände zurückzusetzen.
-
-        Hinweise
-        --------
-        - In vielen Fällen ist keine spezielle Bereinigung notwendig.
-
-        .. note::
-           Diese Methode ist optional, kann aber wichtig werden,
-           wenn externe Ressourcen (z. B. Modelle, Streams) verwendet werden.
-
-        Parameters
-        ----------
-        data : dict
-            Letzte übergebene Daten des Frameworks.
+        Hier geben wir das MediaPipe-Modell frei, damit keine
+        GPU-/CPU-Ressourcen mehr blockiert werden.
         """
-        pass
+        if hasattr(self, "detector") and self.detector is not None:
+            self.detector.close()
+            self.detector = None
