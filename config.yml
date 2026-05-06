@@ -21,3 +21,7 @@ preprocessor:
   buffer_size: 140
   max_lost: 10
   min_steps: 15
+trailmarker:
+  finger_idx: 8
+  max_lost: 10
+  max_trail_length: 50

@@ -1,4 +1,4 @@
-from SignalHub import Module, get_nested_key
+from SignalHub import Module, get_nested_key, GALY
 from collections import deque
 
 class TrailMarker(Module):
@@ -100,6 +100,21 @@ class TrailMarker(Module):
         dict
             Ein leeres Dictionary.
         """
+        # Read configuration values using get_nested_key
+        self.finger_idx = get_nested_key(data['config'], ['trailmarker', 'finger_idx'])
+        self.max_lost = get_nested_key(data['config'], ['trailmarker', 'max_lost'])
+        self.max_trail_length = get_nested_key(data['config'], ['trailmarker', 'max_trail_length'])
+        self.webcam_width = get_nested_key(data['config'], ['webcam', 'width'])
+        self.webcam_height = get_nested_key(data['config'], ['webcam', 'height'])
+        
+        # Use collections.deque for trail history with fixed maximum length
+        # Choice of data structure: deque is efficient for FIFO operations with max length,
+        # automatically removing old points when full, suitable for trajectories.
+        self.trail = deque(maxlen=self.max_trail_length)
+        
+        # Initialize lost counter for handling tracking loss
+        self.lost_counter = 0
+        
         return {}
 
     def step(self, data):
@@ -155,7 +170,43 @@ class TrailMarker(Module):
 
             ``return { ..., "galy": galy}``
         """
-        return {}
+        galy = GALY()
+        
+        detector = data.get('detector', {})
+        hands = detector.get('hands', [])
+        
+        if hands:
+            hand = hands[0]  # Assume first hand
+            landmarks = hand.get('landmarks', [])
+            if len(landmarks) > self.finger_idx:
+                # Extract current finger position
+                pos = (landmarks[self.finger_idx]['x'], landmarks[self.finger_idx]['y'])
+                # Add to deque
+                self.trail.append(pos)
+                # Reset lost counter
+                self.lost_counter = 0
+            else:
+                # No valid landmark, increment lost counter
+                self.lost_counter += 1
+        else:
+            # No hand detected, increment lost counter
+            self.lost_counter += 1
+        
+        # Behavior on tracking loss: If lost for more than max_lost frames, reset trail
+        if self.lost_counter > self.max_lost:
+            self.trail.clear()
+        
+        # Draw lines between consecutive points
+        if len(self.trail) > 1:
+            for i in range(1, len(self.trail)):
+                start = self.trail[i-1]
+                end = self.trail[i]
+                # Optional fade effect: older points are more transparent (lighter color)
+                alpha = i / len(self.trail)  # From 0 (oldest) to 1 (newest)
+                color = (int(255 * alpha), int(255 * alpha), 255)  # Blue to white fade
+                galy.line(start, end, color, 2)
+        
+        return {"galy": galy}
 
     def stop(self, data):
         """
