@@ -131,19 +131,20 @@ class HandDetector(Module):
             Ein leeres Dictionary.
         """
         model_path = Path(__file__).resolve().parents[2] / "hand_landmarker.task"
+        # get_nested_key(key_path, data, default) -- key path uses "." as separator
         detection_confidence = get_nested_key(
+            "config.hand_detection_confidence",
             data,
-            "config/hand_detection_confidence",
             0.6,
         )
         presence_confidence = get_nested_key(
+            "config.hand_presence_confidence",
             data,
-            "config/hand_presence_confidence",
             0.5,
         )
         tracking_confidence = get_nested_key(
+            "config.hand_tracking_confidence",
             data,
-            "config/hand_tracking_confidence",
             0.5,
         )
 
@@ -186,7 +187,7 @@ class HandDetector(Module):
         galy = GALY()
         galy.layer("hands")
 
-        image = get_nested_key(data, "webcam", None)
+        image = get_nested_key("webcam", data, None)
         if image is None:
             return {"detector": {"hands": []}, "galy": galy}
 
