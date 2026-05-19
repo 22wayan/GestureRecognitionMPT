@@ -1,0 +1,6 @@
+{
+  "n_components": 2,
+  "covariance_type": "diag",
+  "mean_accuracy": 1.0,
+  "std_accuracy": 0.0
+}

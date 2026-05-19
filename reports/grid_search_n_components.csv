@@ -1,0 +1,3 @@
+n_components,covariance_type,mean_accuracy,std_accuracy,fold_accuracies
+2,diag,1.0000,0.0000,"1.0000, 1.0000, 1.0000"
+3,diag,1.0000,0.0000,"1.0000, 1.0000, 1.0000"
