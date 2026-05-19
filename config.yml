@@ -21,3 +21,7 @@ preprocessor:
   buffer_size: 140
   max_lost: 10
   min_steps: 15
+hiddenmarkov:
+  score_threshold: -20.0
+  margin_threshold: 0.5
+  unknown_label: "?"

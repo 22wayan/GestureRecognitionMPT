@@ -1,4 +1,9 @@
-from SignalHub import GALY, bgr, get_nested_key, Module
+from pathlib import Path
+
+import numpy as np
+from SignalHub import GALY, Module
+
+from GestureRecognition.hmmclassifier import HMMClassifier
 
 
 class HMMModule(Module):
@@ -66,9 +71,21 @@ class HMMModule(Module):
         """
         super().__init__(
             inputSignals=["config", "preprocessor"],
-            outputSchema={"type": "object", "properties": {outputSignal: {}}},
+            outputSchema={
+                "type": "object",
+                "properties": {
+                    outputSignal: {},
+                    "galy": {},
+                },
+            },
             name="hiddenmarkov",
         )
+        self.outputSignal = outputSignal
+        self.model_path = Path(model_path)
+        self.classifier = None
+        self.score_threshold = -20.0
+        self.margin_threshold = 0.5
+        self.unknown_label = "?"
 
     def start(self, data):
         """
@@ -107,7 +124,54 @@ class HMMModule(Module):
         dict
             Ein leeres Dictionary.
         """
+        config = data.get("config", {})
+        hiddenmarkov_config = config.get("hiddenmarkov", {})
+
+        self.score_threshold = hiddenmarkov_config.get("score_threshold", self.score_threshold)
+        self.margin_threshold = hiddenmarkov_config.get(
+            "margin_threshold", self.margin_threshold
+        )
+        self.unknown_label = hiddenmarkov_config.get("unknown_label", self.unknown_label)
+
+        if self.model_path.exists():
+            self.classifier = HMMClassifier.load(self.model_path)
+        else:
+            self.classifier = None
+
         return {}
+
+    def _build_galy(self, config, label, score, margin):
+        galy = GALY()
+
+        width = config.get("webcam", {}).get("width", 640)
+        height = config.get("webcam", {}).get("height", 360)
+
+        try:
+            if hasattr(galy, "canvas"):
+                galy.canvas("main", (width, height), (0, 0, 0))
+        except Exception:
+            pass
+
+        try:
+            if hasattr(galy, "layer"):
+                galy.layer("hiddenmarkov")
+        except Exception:
+            pass
+
+        text_lines = [
+            f"Label: {label}",
+            f"Score: {score:.3f}",
+            f"Margin: {margin:.3f}",
+        ]
+
+        for index, text in enumerate(text_lines):
+            try:
+                if hasattr(galy, "putText"):
+                    galy.putText(text, (10, 30 + index * 30), color=(255, 255, 255))
+            except Exception:
+                break
+
+        return galy
 
     def step(self, data):
         """
@@ -169,7 +233,57 @@ class HMMModule(Module):
 
             ``return {outputSignal: result, "galy": galy}``
         """
-        return {}
+        trajectory = data.get("preprocessor")
+        config = data.get("config", {})
+
+        if self.classifier is None or trajectory is None:
+            return {self.outputSignal: None}
+
+        trajectory = np.asarray(trajectory, dtype=float)
+        if trajectory.ndim == 1:
+            trajectory = trajectory.reshape(-1, 1)
+
+        if trajectory.ndim != 2 or len(trajectory) == 0:
+            return {self.outputSignal: None}
+
+        scores = self.classifier.decision_function(trajectory)
+        if scores.size == 0:
+            return {self.outputSignal: None}
+
+        score_vector = scores[0]
+        normalized_scores = score_vector / max(len(trajectory), 1)
+        best_index = int(np.argmax(normalized_scores))
+        sorted_scores = np.sort(normalized_scores)[::-1]
+        best_score = float(normalized_scores[best_index])
+        second_best_score = float(sorted_scores[1]) if len(sorted_scores) > 1 else float("-inf")
+        margin = float(best_score - second_best_score) if np.isfinite(second_best_score) else float("inf")
+
+        best_label = self.classifier.classes_[best_index]
+        is_unknown = best_score < self.score_threshold or margin < self.margin_threshold
+        label = self.unknown_label if is_unknown else best_label
+
+        all_scores = {
+            class_label: float(class_score)
+            for class_label, class_score in zip(self.classifier.classes_, normalized_scores)
+        }
+
+        result = {
+            "label": label,
+            "best_label": best_label,
+            "score": best_score,
+            "margin": margin,
+            "scores": all_scores,
+            "unknown": is_unknown,
+            "thresholds": {
+                "score_threshold": self.score_threshold,
+                "margin_threshold": self.margin_threshold,
+            },
+        }
+
+        return {
+            self.outputSignal: result,
+            "galy": self._build_galy(config, label, best_score, margin),
+        }
 
     def stop(self, data):
         """

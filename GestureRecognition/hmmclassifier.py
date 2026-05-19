@@ -1,3 +1,13 @@
+from __future__ import annotations
+
+import pickle
+from collections import defaultdict
+from pathlib import Path
+
+import numpy as np
+from hmmlearn.hmm import GaussianHMM
+
+
 class HMMClassifier:
     """
     TODO: Implementiere einen HMM-basierten Klassifikator
@@ -52,7 +62,82 @@ class HMMClassifier:
 
     """
 
-    def fit(self):
+    def __init__(
+        self,
+        n_components=4,
+        covariance_type="diag",
+        random_state=42,
+        n_iter=100,
+        min_covar=1e-3,
+    ):
+        self.n_components = n_components
+        self.covariance_type = covariance_type
+        self.random_state = random_state
+        self.n_iter = n_iter
+        self.min_covar = min_covar
+        self.models_ = {}
+        self.classes_ = []
+
+    def _as_sequence(self, sequence):
+        sequence = np.asarray(sequence, dtype=float)
+        if sequence.ndim == 1:
+            sequence = sequence.reshape(-1, 1)
+        if sequence.ndim != 2:
+            raise ValueError("Jede Sequenz muss 2-dimensional sein.")
+        if len(sequence) == 0:
+            raise ValueError("Leere Sequenzen sind nicht erlaubt.")
+        return sequence
+
+    def _prepare_training_data(self, X, y=None):
+        if isinstance(X, dict):
+            if "sequences" in X and "labels" in X:
+                sequences = X["sequences"]
+                labels = X["labels"]
+            elif "X" in X and "y" in X:
+                sequences = X["X"]
+                labels = X["y"]
+            else:
+                sequences = []
+                labels = []
+                for label, seqs in X.items():
+                    for seq in seqs:
+                        sequences.append(seq)
+                        labels.append(label)
+        else:
+            sequences = X
+            labels = y
+
+        if labels is None:
+            raise ValueError("Für das Training werden Labels benötigt.")
+
+        if len(sequences) != len(labels):
+            raise ValueError("Anzahl von Sequenzen und Labels passt nicht zusammen.")
+
+        prepared_sequences = [self._as_sequence(sequence) for sequence in sequences]
+        prepared_labels = [str(label) for label in labels]
+        return prepared_sequences, prepared_labels
+
+    def _prepare_inference_data(self, X):
+        if isinstance(X, np.ndarray):
+            if X.ndim == 2:
+                return [self._as_sequence(X)]
+            if X.ndim == 3:
+                return [self._as_sequence(sequence) for sequence in X]
+            raise ValueError("NumPy-Eingaben muessen 2D oder 3D sein.")
+
+        if isinstance(X, (list, tuple)):
+            if not X:
+                return []
+
+            first_item = np.asarray(X[0])
+            if first_item.ndim <= 1:
+                return [self._as_sequence(X)]
+
+            return [self._as_sequence(sequence) for sequence in X]
+
+        return [self._as_sequence(X)]
+
+    def fit(self, X, y=None):
         """
         TODO: Trainiere den Klassifikator
 
@@ -93,9 +178,37 @@ class HMMClassifier:
         -------
         self
         """
-        pass
+        sequences, labels = self._prepare_training_data(X, y)
+        grouped_sequences = defaultdict(list)
 
-    def decision_function(self):
+        for sequence, label in zip(sequences, labels):
+            grouped_sequences[label].append(sequence)
+
+        self.models_ = {}
+        self.classes_ = sorted(grouped_sequences.keys())
+
+        for label in self.classes_:
+            class_sequences = grouped_sequences[label]
+            lengths = [len(sequence) for sequence in class_sequences]
+            X_label = np.vstack(class_sequences)
+
+            # Sehr einfache Schutzmaßnahme, damit kurze Sequenzen das Training
+            # nicht sofort sprengen.
+            n_components = max(1, min(self.n_components, min(lengths)))
+
+            model = GaussianHMM(
+                n_components=n_components,
+                covariance_type=self.covariance_type,
+                random_state=self.random_state,
+                n_iter=self.n_iter,
+                min_covar=self.min_covar,
+            )
+            model.fit(X_label, lengths)
+            self.models_[label] = model
+
+        return self
+
+    def decision_function(self, X):
         """
         TODO: Berechne Scores für jede Klasse
 
@@ -131,9 +244,25 @@ class HMMClassifier:
         scores : array-like
             Score pro Sequenz und Klasse
         """
-        pass
+        if not self.models_:
+            raise ValueError("Der Klassifikator wurde noch nicht trainiert.")
 
-    def predict(self):
+        sequences = self._prepare_inference_data(X)
+        if not sequences:
+            return np.empty((0, len(self.classes_)))
+
+        scores = np.full((len(sequences), len(self.classes_)), -np.inf, dtype=float)
+
+        for sequence_idx, sequence in enumerate(sequences):
+            for class_idx, label in enumerate(self.classes_):
+                try:
+                    scores[sequence_idx, class_idx] = self.models_[label].score(sequence)
+                except Exception:
+                    scores[sequence_idx, class_idx] = -np.inf
+
+        return scores
+
+    def predict(self, X):
         """
         TODO: Sage Klassenlabels voraus
 
@@ -165,4 +294,25 @@ class HMMClassifier:
         labels : list
             Vorhergesagte Labels
         """
-        pass
+        scores = self.decision_function(X)
+        if scores.size == 0:
+            return []
+
+        best_indices = np.argmax(scores, axis=1)
+        return [self.classes_[index] for index in best_indices]
+
+    def save(self, path):
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("wb") as file:
+            pickle.dump(self, file)
+
+    @classmethod
+    def load(cls, path):
+        with Path(path).open("rb") as file:
+            loaded_object = pickle.load(file)
+
+        if isinstance(loaded_object, cls):
+            return loaded_object
+
+        raise TypeError("Die geladene Datei enthaelt keinen HMMClassifier.")
