@@ -1,168 +1,263 @@
+import pickle
+import logging
+import numpy as np
+from pathlib import Path
+from hmmlearn.hmm import GaussianHMM
+
+logger = logging.getLogger(__name__)
+
+
 class HMMClassifier:
     """
-    TODO: Implementiere einen HMM-basierten Klassifikator
+    HMM-basierter Klassifikator für Gestensequenzen.
 
-    Ziel:
-    -----
-    Entwickle einen Klassifikator, der zeitliche Sequenzen mit Hilfe von
-    Hidden-Markov-Modellen (HMMs) klassifiziert. Für HMMs können libraries wie
-    :mod:`hmmlearn` benutzt werden
+    Pro Klasse wird ein separates :class:`hmmlearn.hmm.GaussianHMM` trainiert.
+    Klassifikation läuft über den Argmax der Log-Likelihoods aller Klassenmodelle.
 
-    Grundidee:
-    ----------
-    - Trainiere ein Modell pro Klasse
-    - Bewerte neue Sequenzen anhand der Likelihood unter jedem Modell
-    - Wähle die Klasse mit der höchsten Wahrscheinlichkeit
-
-    .. note::
-       Wie genau deine Modelle aussehen (z. B. Anzahl Zustände, Features,
-       Initialisierung etc.) ist bewusst nicht vorgegeben.
-
-    Wichtige Designentscheidungen:
-    ------------------------------
-    - Wie strukturierst du deine Trainingsdaten?
-    - Wie repräsentierst du Sequenzen?
-    - Wie verbindest du mehrere Sequenzen mit Labels?
-
-    Speicherung:
-    ------------
-    Du solltest dir überlegen:
-    - Wie speicherst du dein trainiertes Modell?
-    - Wie lädst du es später wieder?
-    - Welche Informationen müssen persistiert werden (z. B. Klassen, Modelle)?
-
-    .. tip::
-       ``pickle`` ist eine einfache Möglichkeit, Modelle zu speichern.
-       Alternativ kannst du auch eigene Formate definieren.
-
-    Evaluation:
+    Hintergrund
     -----------
-    Für sinnvolles Training solltest du unbedingt:
-    - eine eigene ``train_test_split``-Logik implementieren
-    - Trainings- und Testdaten sauber trennen
+    Ein Hidden Markov Model beschreibt eine Zeitreihe als Folge von
+    verborgenen Zuständen, die beobachtbare Ausgaben erzeugen.
+    Das Modell ist definiert durch:
 
-    .. warning::
-       Wenn du Training und Test nicht trennst, sind deine Ergebnisse nicht aussagekräftig.
+    - **A** (Übergangsmatrix): Wahrscheinlichkeit, von Zustand i nach j zu wechseln
+    - **B** (Ausgabeverteilung): Wahrscheinlichkeit, eine Beobachtung in Zustand i zu sehen
+      (hier Gauß-Verteilung pro Zustand)
+    - **π** (Startverteilung): Wahrscheinlichkeit, in Zustand i zu beginnen
 
-    Erweiterung (optional):
-    -----------------------
-    - Implementiere eine Grid Search für Hyperparameter
-      (z. B. Anzahl Zustände, Modellstruktur)
-    - Vergleiche verschiedene Modellkonfigurationen
+    Diese Markov-Annahme besagt, dass der nächste Zustand nur vom aktuellen abhängt,
+    nicht von der gesamten Vorgeschichte — sinnvoll für Gesten, da
+    die Bewegungsrichtung im nächsten Frame vor allem vom aktuellen Moment abhängt.
 
+    Training
+    --------
+    Der Baum-Welch-Algorithmus (Expectation-Maximization) schätzt A, B und π
+    iterativ: E-Schritt berechnet Zustandswahrscheinlichkeiten über den
+    Forward-Backward-Algorithmus, M-Schritt maximiert die Parameter.
+
+    Inferenz
+    --------
+    Der Forward-Algorithmus berechnet die Log-Likelihood P(X | Modell) effizient
+    in O(T · K²) mit T = Sequenzlänge und K = Anzahl Zustände.
+    Die Klasse mit der höchsten Log-Likelihood wird vorhergesagt.
+
+    Hyperparameter
+    --------------
+    - ``n_components=4``: Vier verborgene Zustände sind ein guter Startpunkt für
+      Gebärdensprach-Gesten — genug um Phasen (Anlauf, Bewegung, Abschluss) zu
+      modellieren, ohne mit 10 Aufnahmen pro Klasse zu overfitten.
+    - ``covariance_type="diag"``: Diagonale Kovarianzmatrix nimmt an, dass
+      x, y und Geschwindigkeit unkorreliert sind. Das reduziert die Parameteranzahl
+      erheblich gegenüber ``"full"`` und macht das Modell stabiler bei wenig Daten.
+    - ``n_iter=100``: Ausreichend für Konvergenz bei kurzen Gesten-Sequenzen.
+    - ``tol=1e-2``: Konvergenzschwelle, stimmt mit hmmlearn-Standard überein.
+    - ``random_state=42``: Reproduzierbarkeit.
+
+    Parameters
+    ----------
+    n_components : int
+        Anzahl verborgener Zustände pro Modell.
+    covariance_type : str
+        Art der Kovarianzmatrix: ``"diag"``, ``"full"``, ``"spherical"``, ``"tied"``.
+    n_iter : int
+        Maximale Anzahl EM-Iterationen.
+    tol : float
+        Konvergenzschwelle für den Log-Likelihood-Anstieg.
+    random_state : int or None
+        Seed für die Initialisierung.
     """
 
-    def fit(self):
+    def __init__(
+        self,
+        n_components: int = 4,
+        covariance_type: str = "diag",
+        n_iter: int = 100,
+        tol: float = 1e-2,
+        random_state: int | None = 42,
+    ):
+        self.n_components = n_components
+        self.covariance_type = covariance_type
+        self.n_iter = n_iter
+        self.tol = tol
+        self.random_state = random_state
+
+        self.classes_: list = []
+        self._models: dict[str, GaussianHMM] = {}
+
+    def fit(self, X: np.ndarray, y: np.ndarray, lengths: list[int]) -> "HMMClassifier":
         """
-        TODO: Trainiere den Klassifikator
+        Trainiert ein separates GaussianHMM pro Klasse.
 
-        Ziel:
-        -----
-        Trainiere ein separates HMM für jede Klasse basierend auf den
-        gegebenen Sequenzen.
-
-
-        Anforderungen / Ideen:
-        ----------------------
-        - Zerlege die Daten so, dass du pro Klasse alle Sequenzen bekommst
-        - Trainiere ein Modell pro Klasse
-        - Speichere die trainierten Modelle intern
-
-        .. tip::
-           Überlege dir eine sinnvolle Datenstruktur wie:
-           ``label -> (Daten, Sequenzlängen)``
-
-        .. note::
-           Die konkrete Umsetzung ist offen:
-            - Wie genau du Daten aufteilst
-            - Wie du dein Modell initialisierst
-            - Welche Hyperparameter du verwendest
-
-        .. warning::
-           Achte darauf, dass:
-            - ``lengths`` zu ``X`` passen
-            - Labels korrekt zu Sequenzen zugeordnet sind
-
-        Erweiterung:
-        ------------
-        - Experimentiere mit verschiedenen Modellgrößen
-        - Nutze eine Grid Search zur Optimierung
-        - Verwende ein separates Testset zur Evaluation
+        Parameters
+        ----------
+        X : np.ndarray, shape (total_frames, n_features)
+            Alle Trainingssequenzen hintereinandergehängt.
+        y : array-like, shape (n_sequences,)
+            Klassenlabel je Sequenz — muss zur Reihenfolge in ``lengths`` passen.
+        lengths : list of int
+            Länge jeder Sequenz. ``sum(lengths)`` muss gleich ``len(X)`` sein.
 
         Returns
         -------
         self
         """
-        pass
+        X = np.asarray(X, dtype=float)
+        y = np.asarray(y)
+        lengths = list(lengths)
 
-    def decision_function(self):
+        self.classes_ = sorted(set(y))
+        self._models = {}
+
+        for label in self.classes_:
+            mask = y == label
+            class_lengths = [l for l, m in zip(lengths, mask) if m]
+            class_X = self._split_and_concat(X, lengths, mask)
+
+            model = GaussianHMM(
+                n_components=self.n_components,
+                covariance_type=self.covariance_type,
+                n_iter=self.n_iter,
+                tol=self.tol,
+                random_state=self.random_state,
+            )
+            model.fit(class_X, class_lengths)
+            self._models[label] = model
+            logger.info("Klasse '%s' trainiert (%d Sequenzen)", label, len(class_lengths))
+
+        return self
+
+    def decision_function(self, X: np.ndarray, lengths: list[int]) -> np.ndarray:
         """
-        TODO: Berechne Scores für jede Klasse
+        Berechnet Log-Likelihoods aller Klassenmodelle für jede Sequenz.
 
-        Ziel:
-        -----
-        Berechne für jede Eingabesequenz einen Score pro Klasse
-        (z. B. Log-Likelihood unter jedem Modell).
+        Sequenzen, die ein Modell nicht auswerten kann (z.B. zu kurz oder
+        numerisch instabil), bekommen ``-inf`` als Score.
 
-        Anforderungen / Ideen:
-        ----------------------
-        - Zerlege die Eingabe in einzelne Sequenzen
-        - Berechne für jede Sequenz:
-            Score unter jedem Klassenmodell
-        - Gib eine Struktur zurück wie:
-            ``(n_sequences, n_classes)``
-
-        .. tip::
-           Die meisten HMM-Implementierungen bieten eine
-           ``score``-Funktion für Likelihoods.
-
-        .. note::
-           Du entscheidest selbst:
-            - Welcher Score verwendet wird
-            - Wie du mehrere Sequenzen behandelst
-
-        .. warning::
-           Stelle sicher, dass:
-            - Die Reihenfolge der Klassen konsistent ist
-            - Scores vergleichbar sind
+        Parameters
+        ----------
+        X : np.ndarray, shape (total_frames, n_features)
+            Sequenzen hintereinandergehängt.
+        lengths : list of int
+            Länge jeder Sequenz.
 
         Returns
         -------
-        scores : array-like
-            Score pro Sequenz und Klasse
+        scores : np.ndarray, shape (n_sequences, n_classes)
+            Log-Likelihood jeder Sequenz unter jedem Klassenmodell.
+            Spaltenreihenfolge entspricht ``self.classes_``.
         """
-        pass
+        X = np.asarray(X, dtype=float)
+        n_seq = len(lengths)
+        n_classes = len(self.classes_)
+        scores = np.full((n_seq, n_classes), -np.inf)
 
-    def predict(self):
+        sequences = self._iter_sequences(X, lengths)
+
+        for seq_idx, seq in enumerate(sequences):
+            for cls_idx, label in enumerate(self.classes_):
+                try:
+                    scores[seq_idx, cls_idx] = self._models[label].score(seq)
+                except Exception:
+                    pass  # bleibt -inf
+
+        return scores
+
+    def predict(self, X: np.ndarray, lengths: list[int]) -> list:
         """
-        TODO: Sage Klassenlabels voraus
+        Sagt für jede Sequenz die wahrscheinlichste Klasse vorher.
 
-        Ziel:
-        -----
-        Weise jeder Eingabesequenz ein Label zu.
-
-        Anforderungen / Ideen:
-        ----------------------
-        - Nutze deine ``decision_function``
-        - Wähle für jede Sequenz die Klasse mit bestem Score
-
-        .. tip::
-           Typischerweise:
-           ``argmax über Klassen``
-
-        .. note::
-           Achte darauf, dass:
-            - Klassenreihenfolge konsistent ist
-            - Rückgabewerte klar interpretierbar sind
-
-        Erweiterung:
-        ------------
-        - Gib zusätzlich Unsicherheiten oder Scores zurück
-        - Implementiere Top-k Vorhersagen
+        Parameters
+        ----------
+        X : np.ndarray, shape (total_frames, n_features)
+        lengths : list of int
 
         Returns
         -------
-        labels : list
-            Vorhergesagte Labels
+        list
+            Vorhergesagte Klassenlabels, gleiche Länge wie ``lengths``.
         """
-        pass
+        scores = self.decision_function(X, lengths)
+        indices = np.argmax(scores, axis=1)
+        return [self.classes_[i] for i in indices]
+
+    def predict_topk(self, X: np.ndarray, lengths: list[int], k: int) -> list[tuple]:
+        """
+        Gibt die Top-K-Vorhersagen mit zugehörigen Scores zurück.
+
+        Parameters
+        ----------
+        X : np.ndarray, shape (total_frames, n_features)
+        lengths : list of int
+        k : int
+            Anzahl der zurückgegebenen Klassen pro Sequenz.
+
+        Returns
+        -------
+        list of tuple
+            Jedes Element ist ``(labels, scores)`` mit den Top-K-Klassen
+            (absteigend nach Score) und ihren Log-Likelihoods.
+        """
+        all_scores = self.decision_function(X, lengths)
+        k = min(k, len(self.classes_))
+        result = []
+        for row in all_scores:
+            top_indices = np.argsort(row)[::-1][:k]
+            top_labels = [self.classes_[i] for i in top_indices]
+            top_scores = row[top_indices].tolist()
+            result.append((top_labels, top_scores))
+        return result
+
+    def save(self, path: str | Path) -> None:
+        """
+        Speichert den trainierten Klassifikator als Pickle-Datei.
+
+        Parameters
+        ----------
+        path : str or Path
+            Zielpfad für die Datei.
+        """
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "wb") as f:
+            pickle.dump(self, f)
+        logger.info("Modell gespeichert: %s", path)
+
+    @classmethod
+    def load(cls, path: str | Path) -> "HMMClassifier":
+        """
+        Lädt einen gespeicherten Klassifikator aus einer Pickle-Datei.
+
+        Parameters
+        ----------
+        path : str or Path
+            Pfad zur gespeicherten Datei.
+
+        Returns
+        -------
+        HMMClassifier
+        """
+        with open(path, "rb") as f:
+            obj = pickle.load(f)
+        logger.info("Modell geladen: %s", path)
+        return obj
+
+    @staticmethod
+    def _split_and_concat(
+        X: np.ndarray, lengths: list[int], mask: np.ndarray
+    ) -> np.ndarray:
+        """Gibt alle Sequenzen zurück, für die mask True ist, hintereinandergehängt."""
+        parts = []
+        offset = 0
+        for length, keep in zip(lengths, mask):
+            if keep:
+                parts.append(X[offset : offset + length])
+            offset += length
+        return np.vstack(parts)
+
+    @staticmethod
+    def _iter_sequences(X: np.ndarray, lengths: list[int]):
+        """Zerlegt X anhand von lengths in einzelne Sequenzen."""
+        offset = 0
+        for length in lengths:
+            yield X[offset : offset + length]
+            offset += length
