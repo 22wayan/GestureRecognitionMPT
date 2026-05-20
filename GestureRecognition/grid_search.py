@@ -71,6 +71,12 @@ def _accuracy_score(y_true, y_pred):
     return correct / len(y_true)
 
 
+def _stack_sequences(sequences):
+    lengths = [len(np.asarray(sequence)) for sequence in sequences]
+    X = np.vstack([np.asarray(sequence, dtype=float) for sequence in sequences])
+    return X, lengths
+
+
 def _evaluate_configuration(
     sequences,
     labels,
@@ -95,8 +101,12 @@ def _evaluate_configuration(
             covariance_type=covariance_type,
             random_state=random_state + fold_index,
         )
-        classifier.fit(train_sequences, train_labels)
-        predictions = classifier.predict(test_sequences)
+
+        X_train, train_lengths = _stack_sequences(train_sequences)
+        X_test, test_lengths = _stack_sequences(test_sequences)
+
+        classifier.fit(X_train, train_labels, train_lengths)
+        predictions = classifier.predict(X_test, test_lengths)
         fold_accuracies.append(_accuracy_score(test_labels, predictions))
 
     return {
