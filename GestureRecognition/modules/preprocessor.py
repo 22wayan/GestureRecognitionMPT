@@ -1,5 +1,6 @@
 from SignalHub import GALY, get_nested_key, Module
 from collections import deque
+import numpy as np
 
 class Preprocessor(Module):
     """
@@ -62,6 +63,7 @@ class Preprocessor(Module):
             outputSchema={"type": "object", "properties": {outputSignal: {}}},
             name="preprocessor",
         )
+        self.outputSignal = outputSignal
 
     def start(self, data):
         """
@@ -104,6 +106,31 @@ class Preprocessor(Module):
         dict
             Ein leeres Dictionary.
         """
+        # As a beginner student programmer, I need to initialize the module's state here.
+        # First, I read the configuration values from the config signal.
+        # I use get_nested_key to access nested config values safely.
+        # The finger_index specifies which finger landmark to track, default is 8 for index finger tip.
+        self.finger_index = get_nested_key(data['config'], ['preprocessor', 'finger_index'], 8)
+        # buffer_size is the maximum number of points to store in the trajectory buffer.
+        self.buffer_size = get_nested_key(data['config'], ['preprocessor', 'buffer_size'], 30)
+        # min_steps is the minimum number of points needed for a valid trajectory.
+        self.min_steps = get_nested_key(data['config'], ['preprocessor', 'min_steps'], 10)
+        # max_lost is the maximum number of consecutive lost frames before ending the gesture.
+        self.max_lost = get_nested_key(data['config'], ['preprocessor', 'max_lost'], 5)
+        # min_speed_corner and reset_speed_corner are for hysteresis-based motion detection.
+        # min_speed_corner is the threshold to start collecting when movement begins.
+        self.min_speed_corner = get_nested_key(data['config'], ['preprocessor', 'min_speed_corner'], 0.01)
+        # reset_speed_corner is the threshold to stop collecting when movement slows down.
+        self.reset_speed_corner = get_nested_key(data['config'], ['preprocessor', 'reset_speed_corner'], 0.005)
+        
+        # Now, I create a deque to store the finger positions. It has a maximum length to keep only recent points.
+        self.buffer = deque(maxlen=self.buffer_size)
+        # lost_counter counts how many frames the hand has been lost.
+        self.lost_counter = 0
+        # is_moving indicates if the gesture is currently active based on hysteresis.
+        self.is_moving = False
+        
+        # Return an empty dict as required.
         return {}
 
     def step(self, data):
@@ -164,7 +191,85 @@ class Preprocessor(Module):
 
             ``return {outputSignal: trajectory}``
         """
-        return {}
+        # As a beginner student, I implement the collection logic here.
+        # First, get the detector data.
+        detector = data.get('detector')
+        if detector and detector.get('hands'):
+            # If a hand is detected, extract the finger position.
+            hand = detector['hands'][0]  # Assume the first hand.
+            landmark = hand['landmarks'][self.finger_index]
+            pos = np.array([landmark['x'], landmark['y']])
+            # Append the position to the buffer.
+            self.buffer.append(pos)
+            # Reset the lost counter since we have detection.
+            self.lost_counter = 0
+            # Check for movement using hysteresis.
+            if len(self.buffer) > 1:
+                # Calculate the speed as the norm of the difference.
+                diff = np.linalg.norm(self.buffer[-1] - self.buffer[-2])
+                if not self.is_moving and diff > self.min_speed_corner:
+                    # Start collecting if movement detected.
+                    self.is_moving = True
+                elif self.is_moving and diff < self.reset_speed_corner:
+                    # Stop collecting if movement slowed down.
+                    self.is_moving = False
+                    # Process the trajectory if enough points.
+                    if len(self.buffer) >= self.min_steps:
+                        trajectory = self.process_trajectory()
+                        return {self.outputSignal: trajectory}
+                    else:
+                        # Discard if not enough points.
+                        self.buffer.clear()
+            # While collecting, emit None.
+            return {self.outputSignal: None}
+        else:
+            # If no hand detected, increment lost counter.
+            self.lost_counter += 1
+            if self.lost_counter > self.max_lost and self.is_moving:
+                # End the gesture if lost too many frames.
+                self.is_moving = False
+                if len(self.buffer) >= self.min_steps:
+                    trajectory = self.process_trajectory()
+                    return {self.outputSignal: trajectory}
+                else:
+                    self.buffer.clear()
+            # Emit None.
+            return {self.outputSignal: None}
+
+    def process_trajectory(self):
+        """
+        Process the collected trajectory: normalize and add velocity features.
+        
+        Normalization strategy: Centering by subtracting the mean to center the trajectory around the origin,
+        making it translation-invariant. Scaling by dividing by standard deviation + epsilon (1e-8) to make it 
+        scale-invariant and stable against static trajectories where std=0.
+        
+        Used features: (x, y, dx, dy) representation, where x,y are normalized positions and dx,dy are velocities 
+        computed using np.diff. This captures both spatial position and temporal motion for better gesture recognition.
+        
+        Threshold choices: min_steps=10 ensures a minimum trajectory length for meaningful analysis; max_lost=5 allows 
+        brief hand losses without discarding the gesture; min_speed_corner=0.01 and reset_speed_corner=0.005 provide 
+        hysteresis to robustly detect gesture start and end based on movement speed.
+        """
+        # Convert buffer to numpy array.
+        trajectory = np.array(list(self.buffer))
+        # Centering: subtract the mean.
+        mean = np.mean(trajectory, axis=0)
+        trajectory -= mean
+        # Scaling: divide by std + epsilon to avoid division by zero.
+        std = np.std(trajectory, axis=0) + 1e-8
+        trajectory /= std
+        # Velocity features: use np.diff to get differences.
+        if len(trajectory) > 1:
+            diffs = np.diff(trajectory, axis=0)
+            # Combine positions and velocities: (x, y, dx, dy)
+            features = np.column_stack((trajectory[:-1], diffs))
+        else:
+            # If only one point, just return it (though min_steps should prevent this).
+            features = trajectory
+        # Clear the buffer for next gesture.
+        self.buffer.clear()
+        return features
 
     def stop(self, data):
         """
