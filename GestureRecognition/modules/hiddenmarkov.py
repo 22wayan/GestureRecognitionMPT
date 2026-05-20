@@ -246,7 +246,8 @@ class HMMModule(Module):
         if trajectory.ndim != 2 or len(trajectory) == 0:
             return {self.outputSignal: None}
 
-        scores = self.classifier.decision_function(trajectory)
+        lengths = [len(trajectory)]
+        scores = self.classifier.decision_function(trajectory, lengths)
         if scores.size == 0:
             return {self.outputSignal: None}
 
