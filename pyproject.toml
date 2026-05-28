@@ -5,7 +5,9 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "hmmlearn>=0.3.3",
     "mediapipe>=0.10.32",
+    "numpy>=1.26,<2.1",
     "signalhub",
     "tqdm>=4.67.3",
 ]

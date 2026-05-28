@@ -6,7 +6,6 @@ from hmmlearn.hmm import GaussianHMM
 
 logger = logging.getLogger(__name__)
 
-
 class HMMClassifier:
     """
     HMM-basierter Klassifikator für Gestensequenzen.
