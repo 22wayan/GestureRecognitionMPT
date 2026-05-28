@@ -12,3 +12,5 @@ wheels/
 # Other
 data
 .training.py
+plots/
+reports/
