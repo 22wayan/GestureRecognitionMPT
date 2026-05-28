@@ -145,18 +145,8 @@ class HMMModule(Module):
 
         width = config.get("webcam", {}).get("width", 640)
         height = config.get("webcam", {}).get("height", 360)
-
-        try:
-            if hasattr(galy, "canvas"):
-                galy.canvas("main", (width, height), (0, 0, 0))
-        except Exception:
-            pass
-
-        try:
-            if hasattr(galy, "layer"):
-                galy.layer("hiddenmarkov")
-        except Exception:
-            pass
+        galy.canvas("main", (width, height), (0, 0, 0))
+        galy.layer("hiddenmarkov")
 
         text_lines = [
             f"Label: {label}",
@@ -165,11 +155,7 @@ class HMMModule(Module):
         ]
 
         for index, text in enumerate(text_lines):
-            try:
-                if hasattr(galy, "putText"):
-                    galy.putText(text, (10, 30 + index * 30), color=(255, 255, 255))
-            except Exception:
-                break
+            galy.putText(text, (10, 30 + index * 30), color=(255, 255, 255))
 
         return galy
 
