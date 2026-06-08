@@ -87,3 +87,60 @@ Wenn ein Fenster mit bunten Punkten aufgeht, hat alles geklappt. Mit `Q` beenden
 python -m sphinx -b html docs/source docs/build
 open docs/build/index.html
 ```
+
+## Daten aufnehmen (Labeling)
+
+Mit der Funktion `data_labeling(times, label)` in `GestureRecognition/labeling.py`
+lassen sich eigene Trainingsdaten aufnehmen. Der Workflow ist so gebaut, dass ihn
+auch eine Person ohne Vorwissen bedienen kann.
+
+### Aufruf
+
+```python
+from GestureRecognition.labeling import data_labeling
+
+# Nimmt 5 Aufnahmen fuer die Geste "A" auf
+data_labeling(times=5, label="A")
+```
+
+- `times`: Anzahl der Aufnahmen, die fuer dieses Label **gespeichert** werden sollen.
+- `label`: Name der Geste / Klasse (z. B. `"A"`).
+
+Fuer mehrere Klassen wird die Funktion einfach nacheinander mit verschiedenen
+Labels aufgerufen.
+
+### Bedienschritte
+
+1. Die Funktion startet pro Aufnahme `main.py` als Subprocess und zeichnet auf.
+2. ENTER druecken, um eine Aufnahme zu starten.
+3. Geste ausfuehren und das Aufnahme-Fenster schliessen, um die Aufnahme zu beenden.
+4. Danach entscheiden:
+   - `s` → Aufnahme **speichern**
+   - `v` → Aufnahme **verwerfen** (wird wiederholt)
+   - `a` → Vorgang **abbrechen**
+5. Schritte wiederholen sich, bis `times` Aufnahmen gespeichert wurden.
+
+Verworfene oder abgebrochene Aufnahmen hinterlassen keine Dateien, da zuerst in
+eine temporaere Datei aufgenommen wird und diese nur beim Speichern in den
+Datenordner verschoben wird.
+
+### Datenstruktur und Ordnerorganisation
+
+Gespeicherte Aufnahmen liegen nach Label getrennt im Ordner `data/`:
+
+```
+data/
+├── A/
+│   ├── recording_1.pkl
+│   ├── recording_2.pkl
+│   └── ...
+├── B/
+│   ├── recording_1.pkl
+│   └── ...
+└── ...
+```
+
+- Jedes Label bekommt einen eigenen Unterordner `data/{label}/`.
+- Jede Aufnahme wird einzeln als `recording_{i}.pkl` gespeichert.
+- Die Nummer `{i}` zaehlt fortlaufend hoch. Bestehende Aufnahmen werden nie
+  ueberschrieben.
