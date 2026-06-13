@@ -144,3 +144,48 @@ data/
 - Jede Aufnahme wird einzeln als `recording_{i}.pkl` gespeichert.
 - Die Nummer `{i}` zaehlt fortlaufend hoch. Bestehende Aufnahmen werden nie
   ueberschrieben.
+
+## Trainingsdatensatz bauen
+
+Mit `dataset_building(output_path)` in `GestureRecognition/labeling.py` wird
+aus den Rohaufnahmen unter `recordings/<label>/*.pkl` ein fertiger
+Trainingsdatensatz für den `HMMClassifier` erzeugt.
+
+### Aufruf
+
+```python
+from GestureRecognition.labeling import dataset_building
+
+result = dataset_building("data/dataset.pkl")
+```
+
+Das Ergebnis ist sowohl als Rückgabewert als auch als Pickle-Datei unter
+`output_path` verfügbar — ein Dict mit:
+
+- `X_train`, `X_test`: konkatenierte Feature-Arrays (x, y, velocity)
+- `y_train`, `y_test`: Klassenlabel pro Sequenz
+- `lengths_train`, `lengths_test`: Länge jeder einzelnen Sequenz
+- `classes`: sortierte Liste aller Klassenlabels
+
+Direkt nutzbar für:
+
+```python
+classifier.fit(result["X_train"], result["y_train"], result["lengths_train"])
+```
+
+### Sequenz-Level-Split (Data Leakage vermeiden)
+
+Jede Aufnahme ist eine ganze Geste, also eine Sequenz von Frames. Würde man
+einzelne **Frames** zufällig auf Train/Test verteilen, könnten Frames
+derselben Geste in beiden Sets landen. Das Modell hätte dann beim Testen
+quasi schon Teile der Antwort gesehen — die Testgenauigkeit wäre künstlich
+zu hoch. Deshalb wird auf Ebene ganzer **Aufnahmen** gesplittet: Jede
+Sequenz landet komplett in genau einem der beiden Sets.
+
+### Stratifizierung
+
+`stratify=labels` (über `train_test_split`) sorgt dafür, dass Train- und
+Test-Set für jede Klasse den gleichen Anteil an Aufnahmen enthalten. Bei
+z. B. 10 Aufnahmen pro Klasse und `test_size=0.2` landen pro Klasse 2 im
+Test-Set. Ohne Stratifizierung könnte eine Klasse bei wenigen Aufnahmen rein
+zufällig komplett im Train- oder Test-Set landen.

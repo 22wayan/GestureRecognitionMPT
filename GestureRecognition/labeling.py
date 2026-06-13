@@ -7,7 +7,8 @@ import pickle
 import logging
 import numpy as np
 from pathlib import Path
-from collections import defaultdict
+from collections import Counter, defaultdict
+from sklearn.model_selection import train_test_split
 
 logger = logging.getLogger(__name__)
 
@@ -353,73 +354,121 @@ def data_labeling(times: int, label: str):
 
 
 
-def dataset_building(output_path):
+def dataset_building(
+    output_path: str | Path,
+    recordings_dir: str | Path = "recordings",
+    finger_idx: int = 8,
+    min_length: int = 15,
+    max_jump: float = 0.15,
+    test_size: float = 0.2,
+    random_state: int = 42,
+) -> dict:
     """
-    TODO: dataset_building: Trainingsdatensatz aus aufgenommenen Gesten erstellen
+    Baut aus den Rohaufnahmen einen Trainingsdatensatz für den HMMClassifier.
 
-    Ziel:
-    -----
-    Implementiere eine Funktion, die alle aufgenommenen Daten lädt,
-    verarbeitet und in eine Form bringt, die von eurem
-    Hidden-Markov-Modell (HMM) Classifier verwendet werden kann.
+    Lädt und bereinigt alle Aufnahmen über :func:`clean_recordings`, fasst
+    sie zu ``X``/``y``/``lengths``-Arrays zusammen (das Format, das
+    :meth:`HMMClassifier.fit` erwartet) und teilt sie auf Sequenz-Ebene in
+    Train- und Test-Set.
 
-    Anforderungen / Ideen:
-    ----------------------
+    Sequenz-Level-Split (Vermeidung von Data Leakage)
+    --------------------------------------------------
+    Jede Aufnahme ist eine ganze Geste (Sequenz von Frames). Würde man
+    stattdessen einzelne Frames zufällig auf Train/Test verteilen, könnten
+    Frames derselben Geste in beiden Sets landen — das Modell würde dann
+    quasi "auswendig lernen" und die Testgenauigkeit wäre künstlich hoch.
+    Deshalb wird hier auf Höhe ganzer Aufnahmen gesplittet: Jede Sequenz
+    landet komplett in genau einem der beiden Sets.
 
-    1. Daten laden
-
-       - Durchsuche deinen Trainingsdaten-Ordner
-       - Organisiere Daten nach Labels
-
-    2. Feature-Extraktion / Preprocessing
-
-       - Überlege:
-         - Welche Features braucht dein Modell?
-         - Wie transformierst du die Rohdaten sinnvoll?
-       - Wende eine konsistente Verarbeitung auf alle Sequenzen an
-
-    3. Umgang mit Sequenzen
-
-       - Daten sind zeitliche Sequenzen
-       - Achte auf:
-         - Unterschiedliche Längen
-         - Konsistente Struktur
-
-    4. Validierung
-
-       - Entferne unbrauchbare Daten
-         (z. B. zu kurze oder fehlerhafte Sequenzen)
-
-    5. Ausgabeformat
-
-       - Baue den Datensatz so, dass dein HMM direkt damit arbeiten kann
-       - Das Format sollst du selbst definieren
-
-    .. note::
-
-       Es gibt hier keine vorgegebene „richtige“ Lösung.
-       Wichtig ist, dass dein Datensatz konsistent und nutzbar ist.
-
-    .. tip::
-
-       Denke wie ein System-Designer:
-       Wie müssen Daten aussehen, damit Training und Inferenz sauber funktionieren?
-
-    .. warning::
-
-       Inkonsistente Datenstrukturen sind eine der häufigsten Fehlerquellen
-       beim Training von Sequenzmodellen.
-
-    Erweiterung (optional):
-    -----------------------
-
-    - Normalisierung der Daten
-    - Datenaugmentation
-    - Debug-Ausgaben oder Visualisierung
+    Stratifizierung
+    ----------------
+    ``stratify=labels`` sorgt dafür, dass Train- und Test-Set für jede
+    Klasse den gleichen Anteil an Aufnahmen enthalten (z.B. bei 10
+    Aufnahmen und ``test_size=0.2`` landen pro Klasse 2 im Test-Set).
+    Ohne Stratifizierung könnte eine Klasse bei wenigen Aufnahmen rein
+    zufällig komplett im Train- oder Test-Set landen.
 
     Parameters
     ----------
-    output_path : Path or str
-        Zielpfad für den erzeugten Trainingsdatensatz.
+    output_path : str or Path
+        Zielpfad für die erzeugte Pickle-Datei.
+    recordings_dir : str or Path
+        Verzeichnis mit den Rohaufnahmen (``recordings/<label>/*.pkl``).
+    finger_idx : int
+        MediaPipe-Landmark-Index des verfolgten Fingers.
+    min_length : int
+        Minimale Sequenzlänge, siehe :func:`clean_recordings`.
+    max_jump : float
+        Maximaler Frame-zu-Frame-Sprung, siehe :func:`clean_recordings`.
+    test_size : float
+        Anteil der Aufnahmen pro Klasse, der ins Test-Set wandert.
+    random_state : int
+        Seed für den Split, für Reproduzierbarkeit.
+
+    Returns
+    -------
+    dict
+        Dictionary mit den Schlüsseln ``X_train``, ``y_train``,
+        ``lengths_train``, ``X_test``, ``y_test``, ``lengths_test`` sowie
+        ``classes`` (sortierte Liste aller Klassenlabels). ``X_*`` sind
+        konkatenierte Feature-Arrays, ``lengths_*`` enthält die Länge jeder
+        einzelnen Sequenz darin — direkt nutzbar für
+        ``HMMClassifier.fit(X_train, y_train, lengths_train)``.
     """
-    pass
+    dataset = clean_recordings(
+        recordings_dir, finger_idx=finger_idx, min_length=min_length, max_jump=max_jump
+    )
+
+    sequences: list[np.ndarray] = []
+    labels: list[str] = []
+    for label, trajectories in dataset.items():
+        for traj in trajectories:
+            sequences.append(traj)
+            labels.append(label)
+
+    if not sequences:
+        raise ValueError("Keine gueltigen Aufnahmen gefunden.")
+
+    indices = np.arange(len(sequences))
+    train_idx, test_idx = train_test_split(
+        indices, test_size=test_size, stratify=labels, random_state=random_state
+    )
+
+    def _build_split(idx_list):
+        seqs = [sequences[i] for i in idx_list]
+        labs = [labels[i] for i in idx_list]
+        lengths = [len(seq) for seq in seqs]
+        X = np.vstack(seqs)
+        y = np.array(labs)
+        return X, y, lengths
+
+    X_train, y_train, lengths_train = _build_split(train_idx)
+    X_test, y_test, lengths_test = _build_split(test_idx)
+
+    train_counts = Counter(y_train.tolist())
+    test_counts = Counter(y_test.tolist())
+    for label in sorted(dataset.keys()):
+        logger.info(
+            "[%s] train: %d, test: %d",
+            label,
+            train_counts.get(label, 0),
+            test_counts.get(label, 0),
+        )
+
+    result = {
+        "X_train": X_train,
+        "y_train": y_train,
+        "lengths_train": lengths_train,
+        "X_test": X_test,
+        "y_test": y_test,
+        "lengths_test": lengths_test,
+        "classes": sorted(dataset.keys()),
+    }
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "wb") as f:
+        pickle.dump(result, f)
+
+    logger.info("Datensatz gespeichert: %s", output_path)
+    return result
