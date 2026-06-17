@@ -189,3 +189,62 @@ Test-Set für jede Klasse den gleichen Anteil an Aufnahmen enthalten. Bei
 z. B. 10 Aufnahmen pro Klasse und `test_size=0.2` landen pro Klasse 2 im
 Test-Set. Ohne Stratifizierung könnte eine Klasse bei wenigen Aufnahmen rein
 zufällig komplett im Train- oder Test-Set landen.
+
+## Datensatz visualisieren
+
+Mit `visualize_dataset()` in `GestureRecognition/visualization.py` lässt sich
+der bereinigte Datensatz (über `clean_recordings`) visuell prüfen. Die
+Funktion erzeugt drei PNG-Dateien unter `plots/`, jede Klasse hat dabei über
+alle Plots hinweg dieselbe Farbe.
+
+```python
+from GestureRecognition.visualization import visualize_dataset
+
+visualize_dataset()
+```
+
+### `trajectories_per_class.png`
+
+Überlagert die (x, y)-Pfade aller Aufnahmen einer Klasse, der Startpunkt ist
+als Punkt markiert.
+
+**Interpretation:** Die meisten Klassen (z. B. A, B, E, M, S, X) zeigen eine
+klar wiedererkennbare, der jeweiligen Buchstabenform entsprechende
+Trajektorie mit guter Überdeckung der Aufnahmen — die Geste wird also
+konsistent ausgeführt. Bei einigen Klassen (z. B. I, V, T) ist die Form sehr
+einfach/linear, was sie potenziell schwerer von ähnlichen Klassen
+unterscheidbar macht. Einzelne abweichende Linien innerhalb einer Klasse
+(z. B. vereinzelt bei K oder X) sind Ausreißer-Aufnahmen, die im Training zu
+Rauschen führen können.
+
+### `sequence_length_histogram.png`
+
+Histogramm der Sequenzlängen (Anzahl Frames nach Bereinigung) pro Klasse.
+
+**Interpretation:** Die meisten Klassen liegen im Bereich von ca. 50–125
+Frames mit einer relativ engen, eingipfligen Verteilung — die Geste wird
+zeitlich konsistent ausgeführt. Klassen mit breiter gestreuten oder
+mehrgipfligen Histogrammen (z. B. C, K, X) deuten auf unterschiedlich schnell
+ausgeführte Wiederholungen derselben Geste hin, was die HMM-Zustände stärker
+beanspruchen kann.
+
+### `velocity_profiles.png`
+
+Geschwindigkeit pro Frame über die normalisierte Zeit (0–1) für jede
+Aufnahme, mit Mittelwert-Trajektorie (schwarz) pro Klasse.
+
+**Interpretation:** Viele Klassen zeigen ein wiederkehrendes
+Mehrfach-Maxima-Muster (z. B. M, W, X), das zu den mehreren "Spitzen" der
+jeweiligen Buchstabenform passt — die Mittelwertkurve folgt den einzelnen
+Aufnahmen gut, was auf konsistentes Bewegungstempo hindeutet. Aufnahmen, deren
+Geschwindigkeitskurve stark vom Mittelwert abweicht (sichtbar als einzelne
+"ausreißende" farbige Linien, z. B. bei H oder K), sind Kandidaten für
+Tracking-Probleme oder untypisch ausgeführte Gesten.
+
+### Schlussfolgerungen für die Datenqualität
+
+Insgesamt sind die Trajektorien pro Klasse konsistent genug für ein
+HMM-Training. Klassen mit hoher Streuung in Länge und Geschwindigkeit (z. B.
+C, K, X) sollten bei schlechter Klassifikationsleistung zuerst überprüft
+werden — entweder durch zusätzliche, konsistentere Aufnahmen oder durch
+Entfernen einzelner Ausreißer-Sequenzen.
