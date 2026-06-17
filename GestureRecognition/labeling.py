@@ -419,15 +419,50 @@ def dataset_building(
         recordings_dir, finger_idx=finger_idx, min_length=min_length, max_jump=max_jump
     )
 
+    # Sequenzen sammeln und dabei solche mit NaN-Werten ueberspringen.
+    # NaN entsteht bei Frames ohne erkannte Hand mitten in der Aufnahme.
+    # Solche Werte landen sonst ungefiltert im Trainings-Array, womit das
+    # HMM-Training nicht zurechtkommt.
     sequences: list[np.ndarray] = []
     labels: list[str] = []
+    nan_skipped: dict[str, int] = defaultdict(int)
     for label, trajectories in dataset.items():
         for traj in trajectories:
+            if np.isnan(traj).any():
+                nan_skipped[label] += 1
+                continue
             sequences.append(traj)
             labels.append(label)
 
+    if nan_skipped:
+        total_skipped = sum(nan_skipped.values())
+        logger.info(
+            "%d Sequenz(en) wegen NaN-Werten uebersprungen: %s",
+            total_skipped,
+            dict(nan_skipped),
+        )
+
     if not sequences:
         raise ValueError("Keine gueltigen Aufnahmen gefunden.")
+
+    # Stratifizierter Split braucht pro Klasse mindestens zwei Aufnahmen,
+    # damit jede Klasse in Train- UND Test-Set vertreten sein kann.
+    # Sonst bricht train_test_split mit einer schwer verstaendlichen
+    # Meldung ab -- deshalb hier vorab pruefen und klar melden.
+    class_counts = Counter(labels)
+    too_few = {
+        label: count for label, count in class_counts.items() if count < 2
+    }
+    if too_few:
+        details = ", ".join(
+            f"'{label}': {count} Aufnahme(n)" for label, count in sorted(too_few.items())
+        )
+        raise ValueError(
+            "Fuer einen stratifizierten Train/Test-Split werden pro Klasse "
+            "mindestens 2 gueltige Aufnahmen benoetigt. Zu wenige Aufnahmen "
+            f"bei: {details}. Bitte mehr Aufnahmen erstellen oder die "
+            "Bereinigungs-Parameter (min_length, max_jump) lockern."
+        )
 
     indices = np.arange(len(sequences))
     train_idx, test_idx = train_test_split(
