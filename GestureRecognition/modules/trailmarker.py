@@ -101,11 +101,11 @@ class TrailMarker(Module):
             Ein leeres Dictionary.
         """
         # Read configuration values using get_nested_key
-        self.finger_idx = get_nested_key(data['config'], ['trailmarker', 'finger_idx'])
-        self.max_lost = get_nested_key(data['config'], ['trailmarker', 'max_lost'])
-        self.max_trail_length = get_nested_key(data['config'], ['trailmarker', 'max_trail_length'])
-        self.webcam_width = get_nested_key(data['config'], ['webcam', 'width'])
-        self.webcam_height = get_nested_key(data['config'], ['webcam', 'height'])
+        self.finger_idx = get_nested_key("config.trailmarker.finger_idx", data)
+        self.max_lost = get_nested_key("config.trailmarker.max_lost", data)
+        self.max_trail_length = get_nested_key("config.trailmarker.max_trail_length", data)
+        self.webcam_width = get_nested_key("config.webcam.width", data)
+        self.webcam_height = get_nested_key("config.webcam.height", data)
         
         # Use collections.deque for trail history with fixed maximum length
         # Choice of data structure: deque is efficient for FIFO operations with max length,

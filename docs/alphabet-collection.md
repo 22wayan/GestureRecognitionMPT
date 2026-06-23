@@ -101,3 +101,47 @@ clf = HMMClassifier()
 clf.fit(d["X_train"], d["y_train"], d["lengths_train"])
 clf.save("data/hmm.pkl")
 ```
+
+## Fehlerbehebung (wichtig — nicht bei allen gleich!)
+
+Beim ersten Einrichten können je nach Rechner/Kamera ein paar Dinge
+abweichen. Diese Punkte mussten beim ersten Testlauf angepasst werden:
+
+- **Kamera-Index (`config.yml` → `webcam.deviceIndex`):** Nicht bei jedem ist
+  die Kamera am selben Port. Falls das Fenster schwarz bleibt oder ein
+  Kamerafehler kommt, den richtigen Index ermitteln:
+
+  ```bash
+  python -c "
+  import cv2
+  for i in range(5):
+      cap = cv2.VideoCapture(i)
+      print(f'Index {i}:', 'OK' if (cap.isOpened() and cap.read()[0]) else '-')
+      cap.release()
+  "
+  ```
+
+  Den ersten Index mit `OK` in `config.yml` als `deviceIndex` eintragen
+  (eingebaute MacBook-Kamera ist meist `0`). Beim allerersten Lauf fragt macOS
+  einmalig nach der **Kamera-Erlaubnis** — erlauben und erneut starten.
+
+- **mediapipe-Version:** `requirements.txt` pinnt `mediapipe==0.10.32`. Diese
+  Version gibt es nicht für jede Plattform (z. B. Intel-macOS). Falls die
+  Installation scheitert, eine verfügbare Version nehmen:
+  `pip install "mediapipe>=0.10.20,<0.11"`.
+
+- **Schwarzes Fenster trotz Kamera:** War ein Bug — `Webcam()` war in
+  [demo.py](../GestureRecognition/demo.py) auskommentiert. Ist in diesem Branch
+  behoben (Webcam wird für Record-/Live-Modus automatisch aktiviert).
+
+- **`config.recorder.record` fehlte / `record_list is None`:** War ein Bug —
+  in [config.yml](../config.yml) gab es nur `recorder.replay`, nicht
+  `recorder.record`. Ist in diesem Branch behoben.
+
+- **`'dict' object has no attribute 'split'`:** War ein Bug — `TrailMarker` und
+  `Preprocessor` nutzten eine veraltete `get_nested_key`-Signatur. Ist in
+  diesem Branch behoben (jetzt einheitlich `get_nested_key("config.x.y", data)`
+  wie im `HandDetector`).
+
+- **macOS Qt-Crash:** Vor dem Start immer den `QT_QPA_PLATFORM_PLUGIN_PATH`
+  setzen (siehe oben), sonst stürzt das Fenster ab.
