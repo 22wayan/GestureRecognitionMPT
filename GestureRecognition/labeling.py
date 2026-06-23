@@ -384,31 +384,65 @@ def data_labeling(times: int, label: str):
 ALPHABET = [chr(c) for c in range(ord("A"), ord("Z") + 1)]
 
 
-def collect_alphabet(person: str, recordings_dir: str | Path = "recordings"):
+def _person_takes(label_dir: Path, letter: str, person: str) -> int:
     """
-    Gefuehrter Aufnahme-Durchlauf: jeder Buchstabe A-Z genau einmal pro Person.
+    Zaehlt, wie viele Takes diese Person fuer einen Buchstaben schon hat.
+
+    Beruecksichtigt nummerierte Takes (``<L>-<person>-<n>.pkl``) und – aus
+    Abwaertskompatibilitaet – die alte Einzeldatei (``<L>-<person>.pkl``).
+    """
+    numbered = list(label_dir.glob(f"{letter}-{person}-*.pkl"))
+    legacy = label_dir / f"{letter}-{person}.pkl"
+    return len(numbered) + (1 if legacy.exists() else 0)
+
+
+def _next_person_take_path(label_dir: Path, letter: str, person: str) -> Path:
+    """
+    Findet den naechsten freien Take-Pfad ``<L>-<person>-<n>.pkl``.
+
+    Zaehlt ab 1 hoch, bis ein noch nicht vergebener Name gefunden ist, damit
+    keine bestehende Aufnahme ueberschrieben wird.
+    """
+    n = 1
+    while (label_dir / f"{letter}-{person}-{n}.pkl").exists():
+        n += 1
+    return label_dir / f"{letter}-{person}-{n}.pkl"
+
+
+def collect_alphabet(
+    person: str,
+    times: int = 15,
+    recordings_dir: str | Path = "recordings",
+):
+    """
+    Gefuehrter Aufnahme-Durchlauf: jeder Buchstabe A-Z mehrfach pro Person.
 
     Fuehrt eine Person automatisch durch das komplette Alphabet und nimmt pro
-    Buchstabe genau eine Geste auf. Die Aufnahmen landen direkt unter
-    ``recordings/<Buchstabe>/<Buchstabe>-<person>.pkl`` -- also genau dort, wo
-    :func:`dataset_building` standardmaessig liest. Damit fliessen die neuen
-    Aufnahmen ohne weitere Schritte ins Training.
+    Buchstabe ``times`` Gesten auf. Die Aufnahmen landen direkt unter
+    ``recordings/<Buchstabe>/<Buchstabe>-<person>-<n>.pkl`` -- also genau dort,
+    wo :func:`dataset_building` standardmaessig liest (es liest alle ``*.pkl``
+    eines Ordners). Damit fliessen die neuen Aufnahmen ohne weitere Schritte
+    ins Training.
 
     Resume-Faehigkeit
     -----------------
-    Buchstaben, fuer die diese Person bereits eine Datei hat, werden
-    uebersprungen. Der Durchlauf kann also jederzeit abgebrochen und spaeter
-    fortgesetzt werden, ohne etwas zu ueberschreiben.
+    Pro Buchstabe wird gezaehlt, wie viele Takes diese Person bereits hat;
+    aufgenommen wird nur, bis ``times`` erreicht ist. Der Durchlauf kann also
+    jederzeit abgebrochen und spaeter fortgesetzt werden, ohne etwas zu
+    ueberschreiben.
 
     Parameters
     ----------
     person : str
         Name oder Kuerzel der aufnehmenden Person (z. B. "arian"). Wird Teil
-        des Dateinamens, damit die Diversitaet nachvollziehbar bleibt und keine
-        Doppelaufnahmen derselben Person entstehen.
+        des Dateinamens, damit die Diversitaet nachvollziehbar bleibt.
+    times : int
+        Wie viele Takes pro Buchstabe diese Person aufnehmen soll (Standard: 15).
     recordings_dir : str or Path
         Zielverzeichnis mit den Label-Unterordnern (Standard: ``recordings``).
     """
+    if times < 1:
+        raise ValueError(f"times muss >= 1 sein, war {times}.")
     # Personennamen bereinigen und auf dateinamen-taugliche Zeichen pruefen.
     person = person.strip()
     if not person:
@@ -424,8 +458,8 @@ def collect_alphabet(person: str, recordings_dir: str | Path = "recordings"):
     # Kurze Anleitung ausgeben
     print("=" * 50)
     print(f"Alphabet-Aufnahme fuer: {person}")
-    print(f"Es werden alle {len(ALPHABET)} Buchstaben (A-Z) je einmal aufgenommen.")
-    print("Bereits aufgenommene Buchstaben werden uebersprungen.")
+    print(f"Es werden alle {len(ALPHABET)} Buchstaben (A-Z) je {times}x aufgenommen.")
+    print("Bereits aufgenommene Takes werden uebersprungen.")
     print("Ablauf pro Buchstabe:")
     print("  1. ENTER druecken, dann fuehrt sich das Aufnahme-Fenster.")
     print("  2. Geste ausfuehren und das Fenster schliessen.")
@@ -435,26 +469,31 @@ def collect_alphabet(person: str, recordings_dir: str | Path = "recordings"):
     saved = 0
     skipped = 0
 
+    aborted = False
     for i, letter in enumerate(ALPHABET, start=1):
         label_dir = recordings_dir / letter
-        dest = label_dir / f"{letter}-{person}.pkl"
+        label_dir.mkdir(parents=True, exist_ok=True)
 
-        # Resume: schon vorhandene Aufnahme dieser Person ueberspringen.
-        if dest.exists():
-            print(f"[{i}/{len(ALPHABET)}] {letter}: bereits vorhanden -> uebersprungen")
+        # Resume: schon vorhandene Takes dieser Person mitzaehlen.
+        have_letter = _person_takes(label_dir, letter, person)
+        if have_letter >= times:
+            print(
+                f"[{i}/{len(ALPHABET)}] {letter}: bereits {have_letter}/{times} "
+                "-> uebersprungen"
+            )
             skipped += 1
             continue
 
-        label_dir.mkdir(parents=True, exist_ok=True)
-
-        # Pro Buchstabe so lange anbieten, bis gespeichert, uebersprungen
-        # oder der ganze Vorgang abgebrochen wird.
-        done = False
-        aborted = False
-        while not done:
+        # Pro Buchstabe so lange aufnehmen, bis times Takes erreicht sind
+        # (oder der ganze Vorgang abgebrochen wird).
+        while have_letter < times and not aborted:
+            take_no = have_letter + 1
             print()
             print("#" * 50)
-            print(f"#   Buchstabe:  {letter}        [{i}/{len(ALPHABET)}]")
+            print(
+                f"#   Buchstabe:  {letter}   Take {take_no}/{times}   "
+                f"[{i}/{len(ALPHABET)}]"
+            )
             print("#" * 50)
             input("Druecke ENTER, um die Aufnahme zu starten ...")
 
@@ -466,19 +505,19 @@ def collect_alphabet(person: str, recordings_dir: str | Path = "recordings"):
             try:
                 print("Was soll mit der Aufnahme passieren?")
                 print("  [s] speichern")
-                print("  [v] verwerfen (Buchstabe wiederholen)")
+                print("  [v] verwerfen (Take wiederholen)")
                 print("  [a] abbrechen (ganzen Durchlauf beenden)")
                 choice = input("Deine Wahl: ").strip().lower()
 
                 if choice == "s":
+                    dest = _next_person_take_path(label_dir, letter, person)
                     shutil.move(temp_file, dest)
                     saved += 1
+                    have_letter += 1
                     print(f"Gespeichert: {dest}")
-                    done = True
                 elif choice == "a":
                     print("Durchlauf abgebrochen.")
                     aborted = True
-                    done = True
                 else:
                     print("Aufnahme verworfen.")
             finally:
@@ -489,16 +528,20 @@ def collect_alphabet(person: str, recordings_dir: str | Path = "recordings"):
         if aborted:
             break
 
-    # Abschluss: wie viele der 26 Buchstaben hat diese Person nun insgesamt?
-    have = sum(
-        1 for letter in ALPHABET if (recordings_dir / letter / f"{letter}-{person}.pkl").exists()
+    # Abschluss: wie viele Buchstaben hat diese Person nun vollstaendig (times Takes)?
+    complete = sum(
+        1 for letter in ALPHABET
+        if _person_takes(recordings_dir / letter, letter, person) >= times
     )
     print()
     print("=" * 50)
     print(f"Fertig. Neu gespeichert: {saved}, uebersprungen: {skipped}.")
-    print(f"'{person}' hat jetzt {have}/{len(ALPHABET)} Buchstaben aufgenommen.")
-    if have < len(ALPHABET):
-        print("Tipp: Skript erneut starten, um die fehlenden Buchstaben zu ergaenzen.")
+    print(
+        f"'{person}' hat jetzt {complete}/{len(ALPHABET)} Buchstaben "
+        f"vollstaendig ({times} Takes)."
+    )
+    if complete < len(ALPHABET):
+        print("Tipp: Skript erneut starten, um die fehlenden Takes zu ergaenzen.")
     print("=" * 50)
 
 
