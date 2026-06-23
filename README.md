@@ -145,6 +145,44 @@ data/
 - Die Nummer `{i}` zaehlt fortlaufend hoch. Bestehende Aufnahmen werden nie
   ueberschrieben.
 
+## Alphabet-Sammlung im Team (A–Z, 1× pro Person)
+
+Damit das Team schnell und reibungslos Trainingsdaten sammeln kann, gibt es ein
+geführtes Skript, das eine Person automatisch durch **alle 26 Buchstaben** führt
+und je **eine** Aufnahme pro Buchstabe macht. Die Aufnahmen landen direkt in
+`recordings/<Buchstabe>/` — also genau dort, wo `dataset_building()` liest.
+
+### Aufruf
+
+```bash
+python collect_alphabet.py --person arian
+# oder ohne Argument, dann wird der Name abgefragt:
+python collect_alphabet.py
+```
+
+- Pro Buchstabe: ENTER → Geste ausführen → Fenster schließen → `s`/`v`/`a`
+  (speichern / verwerfen / abbrechen) wie beim normalen Labeling.
+- **Resume:** Buchstaben, die diese Person schon aufgenommen hat, werden
+  übersprungen. Der Durchlauf kann jederzeit abgebrochen und später fortgesetzt
+  werden — nichts wird überschrieben.
+
+### Dateibenennung
+
+Jede Aufnahme heißt `recordings/<Buchstabe>/<Buchstabe>-<person>.pkl`
+(z. B. `recordings/A/A-arian.pkl`). So ist nachvollziehbar, dass jedes
+Teammitglied jeden Buchstaben genau einmal aufgenommen hat, und Doppelungen
+derselben Person werden verhindert.
+
+### Danach: Datensatz bauen
+
+Sind alle vier Personen durch, einmalig den Trainingsdatensatz erzeugen:
+
+```bash
+python -c "from GestureRecognition.labeling import dataset_building; dataset_building('data/dataset.pkl')"
+```
+
+Details dazu im nächsten Abschnitt.
+
 ## Trainingsdatensatz bauen
 
 Mit `dataset_building(output_path)` in `GestureRecognition/labeling.py` wird
