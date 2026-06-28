@@ -38,12 +38,29 @@ def _extract_trajectory(recording: dict, finger_idx: int) -> np.ndarray | None:
 
     points = []
     for frame in frames:
-        det = frame.get("detector")
-        if det and len(det.hand_landmarks) > 0:
-            lm = det.hand_landmarks[0][finger_idx]
-            points.append([lm.x, lm.y])
-        else:
+        # Manche Frames sind None (z.B. wird das stop()-Ergebnis des Detectors
+        # mitgespeichert). Solche behandeln wir wie "keine Hand erkannt".
+        if not isinstance(frame, dict):
             points.append(None)
+            continue
+
+        det = frame.get("detector")
+        point = None  # Standard: in diesem Frame keine Hand gefunden
+
+        # Es gibt zwei Aufnahme-Formate -- wir unterstuetzen beide:
+        if hasattr(det, "hand_landmarks"):
+            # 1) Alte Aufnahmen: rohes MediaPipe-Objekt (hat .hand_landmarks)
+            if len(det.hand_landmarks) > 0:
+                lm = det.hand_landmarks[0][finger_idx]
+                point = [lm.x, lm.y]
+        elif isinstance(det, dict):
+            # 2) Neue Aufnahmen: einfaches Dict {"hands": [{"landmarks": [...]}]}
+            hands = det.get("hands", [])
+            if hands:
+                lm = hands[0]["landmarks"][finger_idx]
+                point = [lm["x"], lm["y"]]
+
+        points.append(point)
 
     # Anfang und Ende ohne Hand abschneiden
     start = 0

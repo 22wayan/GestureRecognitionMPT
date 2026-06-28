@@ -1,5 +1,6 @@
 from SignalHub import Module, get_nested_key, GALY
 from collections import deque
+import numpy as np
 
 class TrailMarker(Module):
     """
@@ -171,7 +172,16 @@ class TrailMarker(Module):
             ``return { ..., "galy": galy}``
         """
         galy = GALY()
-        
+        # Wir zeichnen die Spur auf einen eigenen Layer namens "trail".
+        galy.layer("trail")
+        # Die Fingerpunkte sind Zahlen zwischen 0 und 1, GALY zeichnet in Pixeln.
+        # Also dieselbe Umrechnung wie im HandDetector: x mal Breite, y mal Hoehe.
+        mapping = np.array([
+            [self.webcam_width, 0.0, 0.0],
+            [0.0, self.webcam_height, 0.0],
+        ], dtype=np.float64)
+        galy.set_layer_affine_mapping(mapping)
+
         detector = data.get('detector', {})
         hands = detector.get('hands', [])
         
@@ -179,6 +189,11 @@ class TrailMarker(Module):
             hand = hands[0]  # Assume first hand
             landmarks = hand.get('landmarks', [])
             if len(landmarks) > self.finger_idx:
+                # War die Hand laenger als max_lost weg, ist das eine NEUE Geste:
+                # die eingefrorene Spur der vorigen Geste jetzt zuruecksetzen,
+                # bevor die neue beginnt.
+                if self.lost_counter > self.max_lost:
+                    self.trail.clear()
                 # Extract current finger position
                 pos = (landmarks[self.finger_idx]['x'], landmarks[self.finger_idx]['y'])
                 # Add to deque
@@ -191,11 +206,12 @@ class TrailMarker(Module):
         else:
             # No hand detected, increment lost counter
             self.lost_counter += 1
-        
-        # Behavior on tracking loss: If lost for more than max_lost frames, reset trail
-        if self.lost_counter > self.max_lost:
-            self.trail.clear()
-        
+
+        # Die Spur bleibt absichtlich stehen, wenn die Hand das Bild verlaesst --
+        # so sieht der Aufnehmer den fertig gezeichneten Buchstaben und kann
+        # beurteilen, ob die Aufnahme gut war. Zurueckgesetzt wird erst, wenn eine
+        # neue Geste beginnt (siehe oben: Hand kommt nach >max_lost Frames zurueck).
+
         # Draw lines between consecutive points
         if len(self.trail) > 1:
             for i in range(1, len(self.trail)):

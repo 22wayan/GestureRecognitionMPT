@@ -191,6 +191,17 @@ class HandDetector(Module):
         if image is None:
             return {"detector": {"hands": []}, "galy": galy}
 
+        # MediaPipe gibt jeden Punkt als Zahl zwischen 0 und 1 zurueck (also
+        # relativ zur Bildgroesse). GALY zeichnet aber in echten Pixeln. Wir
+        # muessen die Punkte also umrechnen: x mal Bildbreite, y mal Bildhoehe.
+        # GALY uebernimmt das automatisch, wenn wir ihm diese kleine Matrix geben.
+        height, width = image.shape[:2]
+        mapping = np.array([
+            [width, 0.0, 0.0],   # neues x = Breite * x
+            [0.0, height, 0.0],  # neues y = Hoehe  * y
+        ], dtype=np.float64)
+        galy.set_layer_affine_mapping(mapping)
+
         rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_image)
 

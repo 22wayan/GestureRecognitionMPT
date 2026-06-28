@@ -14,3 +14,6 @@ data
 .training.py
 plots/
 reports/
+
+# Aussortierte (schlechte) Aufnahmen aus review_recordings.py
+recordings_rejected/
