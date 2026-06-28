@@ -9,6 +9,7 @@ dependencies = [
     "matplotlib>=3.7",
     "mediapipe>=0.10.32",
     "numpy>=1.26,<2.1",
+    "scikit-learn>=1.3",
     "signalhub",
     "tqdm>=4.67.3",
 ]
