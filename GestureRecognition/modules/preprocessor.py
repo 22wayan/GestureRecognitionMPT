@@ -110,18 +110,18 @@ class Preprocessor(Module):
         # First, I read the configuration values from the config signal.
         # I use get_nested_key to access nested config values safely.
         # The finger_index specifies which finger landmark to track, default is 8 for index finger tip.
-        self.finger_index = get_nested_key(data['config'], ['preprocessor', 'finger_index'], 8)
+        self.finger_index = get_nested_key("config.preprocessor.finger_index", data, 8)
         # buffer_size is the maximum number of points to store in the trajectory buffer.
-        self.buffer_size = get_nested_key(data['config'], ['preprocessor', 'buffer_size'], 30)
+        self.buffer_size = get_nested_key("config.preprocessor.buffer_size", data, 30)
         # min_steps is the minimum number of points needed for a valid trajectory.
-        self.min_steps = get_nested_key(data['config'], ['preprocessor', 'min_steps'], 10)
+        self.min_steps = get_nested_key("config.preprocessor.min_steps", data, 10)
         # max_lost is the maximum number of consecutive lost frames before ending the gesture.
-        self.max_lost = get_nested_key(data['config'], ['preprocessor', 'max_lost'], 5)
+        self.max_lost = get_nested_key("config.preprocessor.max_lost", data, 5)
         # min_speed_corner and reset_speed_corner are for hysteresis-based motion detection.
         # min_speed_corner is the threshold to start collecting when movement begins.
-        self.min_speed_corner = get_nested_key(data['config'], ['preprocessor', 'min_speed_corner'], 0.01)
+        self.min_speed_corner = get_nested_key("config.preprocessor.min_speed_corner", data, 0.01)
         # reset_speed_corner is the threshold to stop collecting when movement slows down.
-        self.reset_speed_corner = get_nested_key(data['config'], ['preprocessor', 'reset_speed_corner'], 0.005)
+        self.reset_speed_corner = get_nested_key("config.preprocessor.reset_speed_corner", data, 0.005)
         
         # Now, I create a deque to store the finger positions. It has a maximum length to keep only recent points.
         self.buffer = deque(maxlen=self.buffer_size)

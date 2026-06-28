@@ -251,6 +251,51 @@ def _next_recording_index(label_dir: str) -> int:
     return i
 
 
+def _record_one_take() -> str | None:
+    """
+    Nimmt eine einzelne Geste auf und gibt den Pfad der Temp-Datei zurueck.
+
+    Startet ``main.py`` im Record-Modus als Subprocess und lenkt die Aufnahme
+    in eine temporaere Datei. Die leere Temp-Datei wird vorher geloescht, damit
+    ihr blosses Vorhandensein nach dem Subprocess bedeutet: "Aufnahme war
+    erfolgreich".
+
+    Der Aufrufer ist dafuer verantwortlich, die zurueckgegebene Temp-Datei
+    entweder an ihren Zielort zu verschieben oder zu loeschen.
+
+    Returns
+    -------
+    str or None
+        Pfad zur Temp-Datei mit der Aufnahme, oder ``None`` wenn keine
+        Aufnahme entstanden ist (z. B. bei einem Crash).
+    """
+    # Temporaere Datei fuer diese eine Aufnahme erstellen.
+    # SignalHub schreibt die Aufnahme erst beim sauberen Beenden in diese Datei.
+    # Wir loeschen die leere Temp-Datei wieder, damit ihr blosses Vorhandensein
+    # spaeter bedeutet: "Aufnahme war erfolgreich".
+    fd, temp_file = tempfile.mkstemp(suffix=".pkl")
+    os.close(fd)
+    os.remove(temp_file)
+
+    # main.py als Subprocess starten und die Aufnahme in die Temp-Datei lenken.
+    # --mode record sorgt dafuer, dass aufgenommen wird.
+    cmd = [
+        sys.executable,
+        "main.py",
+        "--mode",
+        "record",
+        "--recorder.file",
+        temp_file,
+    ]
+    subprocess.run(cmd)
+
+    # Crash-Schutz: Wenn keine Datei entstanden ist, ist beim Aufnehmen
+    # etwas schiefgelaufen.
+    if not os.path.exists(temp_file):
+        return None
+    return temp_file
+
+
 def data_labeling(times: int, label: str):
     """
     Aufnahme-Workflow fuer eigene Trainingsdaten.
@@ -292,33 +337,16 @@ def data_labeling(times: int, label: str):
         print(f"--- Aufnahme {saved + 1} von {times} (Label: {label}) ---")
         input("Druecke ENTER, um die Aufnahme zu starten ...")
 
-        # Temporaere Datei fuer diese eine Aufnahme erstellen.
-        # SignalHub schreibt die Aufnahme erst beim sauberen Beenden in diese Datei.
-        # Wir loeschen die leere Temp-Datei wieder, damit ihr blosses Vorhandensein
-        # spaeter bedeutet: "Aufnahme war erfolgreich".
-        fd, temp_file = tempfile.mkstemp(suffix=".pkl")
-        os.close(fd)
-        os.remove(temp_file)
+        # Eine einzelne Aufnahme machen (Temp-Datei mit Crash-Schutz).
+        temp_file = _record_one_take()
+
+        # Crash-Schutz: Wenn keine Datei entstanden ist, ist beim Aufnehmen
+        # etwas schiefgelaufen. Wir speichern dann nichts und versuchen es erneut.
+        if temp_file is None:
+            print("Es wurde keine Aufnahme erzeugt. Bitte erneut versuchen.")
+            continue
 
         try:
-            # main.py als Subprocess starten und die Aufnahme in die Temp-Datei lenken.
-            # --mode record sorgt dafuer, dass aufgenommen wird.
-            cmd = [
-                sys.executable,
-                "main.py",
-                "--mode",
-                "record",
-                "--recorder.file",
-                temp_file,
-            ]
-            subprocess.run(cmd)
-
-            # Crash-Schutz: Wenn keine Datei entstanden ist, ist beim Aufnehmen
-            # etwas schiefgelaufen. Wir speichern dann nichts und versuchen es erneut.
-            if not os.path.exists(temp_file):
-                print("Es wurde keine Aufnahme erzeugt. Bitte erneut versuchen.")
-                continue
-
             # Benutzer entscheiden lassen, was mit der Aufnahme passiert
             print("Was soll mit der Aufnahme passieren?")
             print("  [s] speichern")
@@ -352,6 +380,169 @@ def data_labeling(times: int, label: str):
     print(f"Fertig. {saved} Aufnahme(n) fuer Label '{label}' gespeichert.")
 
 
+# Buchstaben A-Z, die im Team-Workflow aufgenommen werden.
+ALPHABET = [chr(c) for c in range(ord("A"), ord("Z") + 1)]
+
+
+def _person_takes(label_dir: Path, letter: str, person: str) -> int:
+    """
+    Zaehlt, wie viele Takes diese Person fuer einen Buchstaben schon hat.
+
+    Beruecksichtigt nummerierte Takes (``<L>-<person>-<n>.pkl``) und – aus
+    Abwaertskompatibilitaet – die alte Einzeldatei (``<L>-<person>.pkl``).
+    """
+    numbered = list(label_dir.glob(f"{letter}-{person}-*.pkl"))
+    legacy = label_dir / f"{letter}-{person}.pkl"
+    return len(numbered) + (1 if legacy.exists() else 0)
+
+
+def _next_person_take_path(label_dir: Path, letter: str, person: str) -> Path:
+    """
+    Findet den naechsten freien Take-Pfad ``<L>-<person>-<n>.pkl``.
+
+    Zaehlt ab 1 hoch, bis ein noch nicht vergebener Name gefunden ist, damit
+    keine bestehende Aufnahme ueberschrieben wird.
+    """
+    n = 1
+    while (label_dir / f"{letter}-{person}-{n}.pkl").exists():
+        n += 1
+    return label_dir / f"{letter}-{person}-{n}.pkl"
+
+
+def collect_alphabet(
+    person: str,
+    times: int = 15,
+    recordings_dir: str | Path = "recordings",
+):
+    """
+    Gefuehrter Aufnahme-Durchlauf: jeder Buchstabe A-Z mehrfach pro Person.
+
+    Fuehrt eine Person automatisch durch das komplette Alphabet und nimmt pro
+    Buchstabe ``times`` Gesten auf. Die Aufnahmen landen direkt unter
+    ``recordings/<Buchstabe>/<Buchstabe>-<person>-<n>.pkl`` -- also genau dort,
+    wo :func:`dataset_building` standardmaessig liest (es liest alle ``*.pkl``
+    eines Ordners). Damit fliessen die neuen Aufnahmen ohne weitere Schritte
+    ins Training.
+
+    Resume-Faehigkeit
+    -----------------
+    Pro Buchstabe wird gezaehlt, wie viele Takes diese Person bereits hat;
+    aufgenommen wird nur, bis ``times`` erreicht ist. Der Durchlauf kann also
+    jederzeit abgebrochen und spaeter fortgesetzt werden, ohne etwas zu
+    ueberschreiben.
+
+    Parameters
+    ----------
+    person : str
+        Name oder Kuerzel der aufnehmenden Person (z. B. "arian"). Wird Teil
+        des Dateinamens, damit die Diversitaet nachvollziehbar bleibt.
+    times : int
+        Wie viele Takes pro Buchstabe diese Person aufnehmen soll (Standard: 15).
+    recordings_dir : str or Path
+        Zielverzeichnis mit den Label-Unterordnern (Standard: ``recordings``).
+    """
+    if times < 1:
+        raise ValueError(f"times muss >= 1 sein, war {times}.")
+    # Personennamen bereinigen und auf dateinamen-taugliche Zeichen pruefen.
+    person = person.strip()
+    if not person:
+        raise ValueError("Bitte einen nicht-leeren Namen / ein Kuerzel angeben.")
+    if any(c in person for c in r'/\: '):
+        raise ValueError(
+            f"Ungueltiger Name '{person}': keine Leerzeichen, Slashes oder "
+            "Doppelpunkte erlauben (wird Teil des Dateinamens)."
+        )
+
+    recordings_dir = Path(recordings_dir)
+
+    # Kurze Anleitung ausgeben
+    print("=" * 50)
+    print(f"Alphabet-Aufnahme fuer: {person}")
+    print(f"Es werden alle {len(ALPHABET)} Buchstaben (A-Z) je {times}x aufgenommen.")
+    print("Bereits aufgenommene Takes werden uebersprungen.")
+    print("Ablauf pro Buchstabe:")
+    print("  1. ENTER druecken, dann fuehrt sich das Aufnahme-Fenster.")
+    print("  2. Geste ausfuehren und das Fenster schliessen.")
+    print("  3. Danach entscheiden: speichern / verwerfen / abbrechen.")
+    print("=" * 50)
+
+    saved = 0
+    skipped = 0
+
+    aborted = False
+    for i, letter in enumerate(ALPHABET, start=1):
+        label_dir = recordings_dir / letter
+        label_dir.mkdir(parents=True, exist_ok=True)
+
+        # Resume: schon vorhandene Takes dieser Person mitzaehlen.
+        have_letter = _person_takes(label_dir, letter, person)
+        if have_letter >= times:
+            print(
+                f"[{i}/{len(ALPHABET)}] {letter}: bereits {have_letter}/{times} "
+                "-> uebersprungen"
+            )
+            skipped += 1
+            continue
+
+        # Pro Buchstabe so lange aufnehmen, bis times Takes erreicht sind
+        # (oder der ganze Vorgang abgebrochen wird).
+        while have_letter < times and not aborted:
+            take_no = have_letter + 1
+            print()
+            print("#" * 50)
+            print(
+                f"#   Buchstabe:  {letter}   Take {take_no}/{times}   "
+                f"[{i}/{len(ALPHABET)}]"
+            )
+            print("#" * 50)
+            input("Druecke ENTER, um die Aufnahme zu starten ...")
+
+            temp_file = _record_one_take()
+            if temp_file is None:
+                print("Es wurde keine Aufnahme erzeugt. Bitte erneut versuchen.")
+                continue
+
+            try:
+                print("Was soll mit der Aufnahme passieren?")
+                print("  [s] speichern")
+                print("  [v] verwerfen (Take wiederholen)")
+                print("  [a] abbrechen (ganzen Durchlauf beenden)")
+                choice = input("Deine Wahl: ").strip().lower()
+
+                if choice == "s":
+                    dest = _next_person_take_path(label_dir, letter, person)
+                    shutil.move(temp_file, dest)
+                    saved += 1
+                    have_letter += 1
+                    print(f"Gespeichert: {dest}")
+                elif choice == "a":
+                    print("Durchlauf abgebrochen.")
+                    aborted = True
+                else:
+                    print("Aufnahme verworfen.")
+            finally:
+                # Aufraeumen: eine evtl. noch vorhandene Temp-Datei loeschen.
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+
+        if aborted:
+            break
+
+    # Abschluss: wie viele Buchstaben hat diese Person nun vollstaendig (times Takes)?
+    complete = sum(
+        1 for letter in ALPHABET
+        if _person_takes(recordings_dir / letter, letter, person) >= times
+    )
+    print()
+    print("=" * 50)
+    print(f"Fertig. Neu gespeichert: {saved}, uebersprungen: {skipped}.")
+    print(
+        f"'{person}' hat jetzt {complete}/{len(ALPHABET)} Buchstaben "
+        f"vollstaendig ({times} Takes)."
+    )
+    if complete < len(ALPHABET):
+        print("Tipp: Skript erneut starten, um die fehlenden Takes zu ergaenzen.")
+    print("=" * 50)
 
 
 def dataset_building(
