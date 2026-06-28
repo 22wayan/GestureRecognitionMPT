@@ -145,12 +145,22 @@ data/
 - Die Nummer `{i}` zaehlt fortlaufend hoch. Bestehende Aufnahmen werden nie
   ueberschrieben.
 
-## Alphabet-Sammlung im Team (A–Z, 1× pro Person)
+## Alphabet-Sammlung im Team (A–Z)
 
 Damit das Team schnell und reibungslos Trainingsdaten sammeln kann, gibt es ein
 geführtes Skript, das eine Person automatisch durch **alle 26 Buchstaben** führt
-und je **eine** Aufnahme pro Buchstabe macht. Die Aufnahmen landen direkt in
-`recordings/<Buchstabe>/` — also genau dort, wo `dataset_building()` liest.
+und pro Buchstabe **mehrere** Aufnahmen macht (Standard: 15). Die Aufnahmen
+landen direkt in `recordings/<Buchstabe>/` — also genau dort, wo
+`dataset_building()` liest.
+
+> **Vor dem ersten Lauf** unbedingt den Webcam-Index setzen (siehe
+> [Schritt 5](#5-webcam-index-einstellen)), sonst bleibt das Fenster schwarz.
+> `deviceIndex` ist pro Rechner unterschiedlich — diese lokale Einstellung
+> **nicht** committen. Auf macOS außerdem vorher den Qt-Pfad setzen, sonst
+> crasht das Fenster:
+> ```bash
+> export QT_QPA_PLATFORM_PLUGIN_PATH=$(python -c "import PyQt5, os; print(os.path.join(os.path.dirname(PyQt5.__file__), 'Qt5', 'plugins', 'platforms'))")
+> ```
 
 ### Aufruf
 
@@ -158,24 +168,48 @@ und je **eine** Aufnahme pro Buchstabe macht. Die Aufnahmen landen direkt in
 python collect_alphabet.py --person arian
 # oder ohne Argument, dann wird der Name abgefragt:
 python collect_alphabet.py
+# Anzahl Aufnahmen pro Buchstabe anpassen (Standard 15):
+python collect_alphabet.py --person arian --times 15
 ```
 
-- Pro Buchstabe: ENTER → Geste ausführen → Fenster schließen → `s`/`v`/`a`
-  (speichern / verwerfen / abbrechen) wie beim normalen Labeling.
-- **Resume:** Buchstaben, die diese Person schon aufgenommen hat, werden
-  übersprungen. Der Durchlauf kann jederzeit abgebrochen und später fortgesetzt
-  werden — nichts wird überschrieben.
+- Pro Buchstabe: ENTER → Geste in die Luft malen → Fenster schließen →
+  `s`/`v`/`a` (speichern / verwerfen / abbrechen).
+- Die gezeichnete Spur **bleibt stehen**, wenn die Hand das Bild verlässt — so
+  siehst du den fertigen Buchstaben und erkennst sofort, ob die Aufnahme sauber
+  war (ein wilder Querstrich = Tracking-Sprung = lieber `v`).
+- **Resume:** Bereits aufgenommene Takes dieser Person werden übersprungen. Der
+  Durchlauf kann jederzeit abgebrochen und später fortgesetzt werden — nichts
+  wird überschrieben.
 
 ### Dateibenennung
 
-Jede Aufnahme heißt `recordings/<Buchstabe>/<Buchstabe>-<person>.pkl`
-(z. B. `recordings/A/A-arian.pkl`). So ist nachvollziehbar, dass jedes
-Teammitglied jeden Buchstaben genau einmal aufgenommen hat, und Doppelungen
-derselben Person werden verhindert.
+Jede Aufnahme heißt `recordings/<Buchstabe>/<Buchstabe>-<person>-<n>.pkl`
+(z. B. `recordings/A/A-arian-1.pkl`). So bleibt nachvollziehbar, wer welche
+Aufnahmen gemacht hat, und nichts wird überschrieben.
+
+### Aufnahmen prüfen & aussortieren
+
+Nicht jede Aufnahme ist brauchbar (zu kurz, Tracking-Sprung, Hand kurz
+verloren). `review_recordings.py` prüft alle eigenen Aufnahmen mit **denselben
+Kriterien wie `dataset_building`** und verschiebt schlechte optional nach
+`recordings_rejected/` (löscht nichts):
+
+```bash
+python review_recordings.py --person arian              # nur Bericht
+python review_recordings.py --person arian --quarantine # schlechte aussortieren
+```
+
+Workflow bis z. B. 15 gute Aufnahmen pro Buchstabe:
+
+```bash
+python collect_alphabet.py --person arian               # fehlende nachnehmen
+python review_recordings.py --person arian --quarantine # prüfen & aussortieren
+# wiederholen, bis "fehlt 0"
+```
 
 ### Danach: Datensatz bauen
 
-Sind alle vier Personen durch, einmalig den Trainingsdatensatz erzeugen:
+Sind alle Personen durch, einmalig den Trainingsdatensatz erzeugen:
 
 ```bash
 python -c "from GestureRecognition.labeling import dataset_building; dataset_building('data/dataset.pkl')"
