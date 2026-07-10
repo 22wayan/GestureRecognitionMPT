@@ -109,8 +109,11 @@ class Preprocessor(Module):
         # As a beginner student programmer, I need to initialize the module's state here.
         # First, I read the configuration values from the config signal.
         # I use get_nested_key to access nested config values safely.
-        # The finger_index specifies which finger landmark to track, default is 8 for index finger tip.
-        self.finger_index = get_nested_key("config.preprocessor.finger_index", data, 8)
+        # finger_idx legt fest, welches Hand-Landmark verfolgt wird (Default 8 = Zeigefingerspitze).
+        # WICHTIG: Der Schluessel heisst finger_idx -- genau wie in config.yml, im Training
+        # (labeling.py) und im TrailMarker. Nur mit exakt gleichem Schluessel verfolgen Training
+        # und Live denselben Finger; ein abweichender Name wuerde still auf den Default zurueckfallen.
+        self.finger_idx = get_nested_key("config.preprocessor.finger_idx", data, 8)
         # buffer_size is the maximum number of points to store in the trajectory buffer.
         self.buffer_size = get_nested_key("config.preprocessor.buffer_size", data, 30)
         # min_steps is the minimum number of points needed for a valid trajectory.
@@ -197,7 +200,7 @@ class Preprocessor(Module):
         if detector and detector.get('hands'):
             # If a hand is detected, extract the finger position.
             hand = detector['hands'][0]  # Assume the first hand.
-            landmark = hand['landmarks'][self.finger_index]
+            landmark = hand['landmarks'][self.finger_idx]
             pos = np.array([landmark['x'], landmark['y']])
             # Append the position to the buffer.
             self.buffer.append(pos)
