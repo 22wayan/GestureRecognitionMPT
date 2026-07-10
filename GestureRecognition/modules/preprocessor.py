@@ -238,36 +238,47 @@ class Preprocessor(Module):
 
     def process_trajectory(self):
         """
-        Process the collected trajectory: normalize and add velocity features.
-        
-        Normalization strategy: Centering by subtracting the mean to center the trajectory around the origin,
-        making it translation-invariant. Scaling by dividing by standard deviation + epsilon (1e-8) to make it 
-        scale-invariant and stable against static trajectories where std=0.
-        
-        Used features: (x, y, dx, dy) representation, where x,y are normalized positions and dx,dy are velocities 
-        computed using np.diff. This captures both spatial position and temporal motion for better gesture recognition.
-        
-        Threshold choices: min_steps=10 ensures a minimum trajectory length for meaningful analysis; max_lost=5 allows 
-        brief hand losses without discarding the gesture; min_speed_corner=0.01 and reset_speed_corner=0.005 provide 
-        hysteresis to robustly detect gesture start and end based on movement speed.
+        Bereitet die gesammelte Trajektorie so auf, dass sie exakt zum
+        Trainingsformat passt.
+
+        Warum das wichtig ist
+        ---------------------
+        Der Klassifikator wird in
+        :func:`GestureRecognition.labeling.dataset_building` (ueber
+        :func:`clean_recordings`) auf Sequenzen der Form ``(N, 3)`` mit den
+        Spalten ``(x, y, velocity)`` trainiert. Damit die hier live erzeugte
+        Trajektorie vom Modell bewertet werden kann, muss sie im selben Format
+        vorliegen -- sonst passt die Feature-Dimension nicht und das Modell
+        liefert keinen sinnvollen Score.
+
+        Deshalb nutzen wir hier genau dieselben zwei Schritte wie das Training
+        und rufen dessen Funktionen direkt auf (eine einzige Quelle der Wahrheit
+        -- Live und Training koennen so nie wieder auseinanderlaufen):
+
+        1. ``_normalize``    -- zentrieren + auf den Einheitskreis skalieren -> ``(x, y)``
+        2. ``_add_velocity`` -- Geschwindigkeit (Abstand zum Vorframe) als
+           dritte Spalte anhaengen -> ``(x, y, velocity)``
+
+        Returns
+        -------
+        np.ndarray
+            Trajektorie der Form ``(N, 3)`` mit den Spalten ``(x, y, velocity)``.
         """
-        # Convert buffer to numpy array.
-        trajectory = np.array(list(self.buffer))
-        # Centering: subtract the mean.
-        mean = np.mean(trajectory, axis=0)
-        trajectory -= mean
-        # Scaling: divide by std + epsilon to avoid division by zero.
-        std = np.std(trajectory, axis=0) + 1e-8
-        trajectory /= std
-        # Velocity features: use np.diff to get differences.
-        if len(trajectory) > 1:
-            diffs = np.diff(trajectory, axis=0)
-            # Combine positions and velocities: (x, y, dx, dy)
-            features = np.column_stack((trajectory[:-1], diffs))
-        else:
-            # If only one point, just return it (though min_steps should prevent this).
-            features = trajectory
-        # Clear the buffer for next gesture.
+        # Die beiden Aufbereitungsschritte des Trainings wiederverwenden. Der
+        # Import steht bewusst hier in der Funktion: So wird die nur fuers
+        # Training benoetigte labeling-Abhaengigkeit erst beim Abschluss einer
+        # Geste geladen und belastet den Start der Live-Pipeline nicht.
+        from GestureRecognition.labeling import _normalize, _add_velocity
+
+        # Rohe (x, y)-Punkte aus dem Puffer als NumPy-Array holen.
+        trajectory = np.array(list(self.buffer), dtype=float)
+
+        # 1) Zentrieren + auf den Einheitskreis skalieren -> (x, y).
+        trajectory = _normalize(trajectory)
+        # 2) Geschwindigkeit als dritte Spalte anhaengen -> (x, y, velocity).
+        features = _add_velocity(trajectory)
+
+        # Puffer fuer die naechste Geste leeren.
         self.buffer.clear()
         return features
 
