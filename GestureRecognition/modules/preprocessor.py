@@ -238,37 +238,76 @@ class Preprocessor(Module):
 
     def process_trajectory(self):
         """
-        Process the collected trajectory: normalize and add velocity features.
-        
-        Normalization strategy: Centering by subtracting the mean to center the trajectory around the origin,
-        making it translation-invariant. Scaling by dividing by standard deviation + epsilon (1e-8) to make it 
-        scale-invariant and stable against static trajectories where std=0.
-        
-        Used features: (x, y, dx, dy) representation, where x,y are normalized positions and dx,dy are velocities 
-        computed using np.diff. This captures both spatial position and temporal motion for better gesture recognition.
-        
-        Threshold choices: min_steps=10 ensures a minimum trajectory length for meaningful analysis; max_lost=5 allows 
-        brief hand losses without discarding the gesture; min_speed_corner=0.01 and reset_speed_corner=0.005 provide 
-        hysteresis to robustly detect gesture start and end based on movement speed.
+        Wandelt die gesammelten Rohpunkte in GENAU das Feature-Format um, mit dem
+        der HMM-Klassifikator trainiert wurde: Spalten ``(x, y, velocity)``, also
+        3 Zahlen (Features) pro Frame.
+
+        Warum das so wichtig ist (fuer Anfaenger erklaert)
+        --------------------------------------------------
+        Der Klassifikator lernt beim Training ein eigenes Modell pro Geste. Jedes
+        Modell merkt sich dabei, WIE VIELE Features eine Trajektorie pro Zeitschritt
+        hat und wie diese Zahlen ungefaehr verteilt sind. In der Live-Erkennung
+        muessen wir dem Modell deshalb Daten im GENAU GLEICHEN Format geben -- sonst
+        kann es die Sequenz nicht bewerten.
+
+        Trainiert wird ueber :func:`GestureRecognition.labeling.clean_recordings`.
+        Dort passiert pro Aufnahme: erst :func:`_normalize`, dann
+        :func:`_add_velocity` -> Ergebnis ``(x, y, velocity)``.
+
+        Der Fehler, der hier frueher steckte
+        -------------------------------------
+        Frueher erzeugte diese Methode ein ANDERES Format: 4 Features
+        ``(x, y, dx, dy)`` und eine andere Normalisierung (Teilen durch die
+        Standardabweichung statt durch den Einheitskreis). 4 Features passen aber
+        nicht in ein Modell, das auf 3 Features trainiert wurde -> das Modell konnte
+        die Live-Sequenz nicht bewerten (Score ``-inf``) -> live kam IMMER "?".
+
+        Die Loesung: eine einzige Quelle der Wahrheit
+        ---------------------------------------------
+        Statt Normalisierung + Velocity hier ein zweites Mal (und leicht anders) zu
+        programmieren, rufen wir dieselben Funktionen wie das Training auf. So
+        koennen Training und Live nie wieder auseinanderlaufen.
+
+        Returns
+        -------
+        np.ndarray
+            Trajektorie der Form ``(N, 3)`` mit Spalten ``(x, y, velocity)`` --
+            identisch zum Trainingsformat.
         """
-        # Convert buffer to numpy array.
-        trajectory = np.array(list(self.buffer))
-        # Centering: subtract the mean.
-        mean = np.mean(trajectory, axis=0)
-        trajectory -= mean
-        # Scaling: divide by std + epsilon to avoid division by zero.
-        std = np.std(trajectory, axis=0) + 1e-8
-        trajectory /= std
-        # Velocity features: use np.diff to get differences.
-        if len(trajectory) > 1:
-            diffs = np.diff(trajectory, axis=0)
-            # Combine positions and velocities: (x, y, dx, dy)
-            features = np.column_stack((trajectory[:-1], diffs))
-        else:
-            # If only one point, just return it (though min_steps should prevent this).
-            features = trajectory
-        # Clear the buffer for next gesture.
+        # -------------------------------------------------------------------
+        # WICHTIG: Diese Umwandlung muss EXAKT das gleiche Ergebnis liefern wie
+        # die Trainings-Pipeline in labeling.py. Sonst bekommt der Klassifikator
+        # live ein anderes Datenformat als beim Training und kann die Geste nicht
+        # bewerten (Score -inf -> live kommt immer "?" heraus).
+        #
+        # Damit Live und Training NIE wieder auseinanderlaufen, benutzen wir hier
+        # GENAU DIESELBEN Funktionen, die auch beim Datensatz-Bau verwendet werden:
+        #   _normalize   -> zentrieren + auf Einheitskreis skalieren  (x, y)
+        #   _add_velocity -> Geschwindigkeit als 3. Spalte anhaengen   (x, y, velocity)
+        #
+        # Der Import steht bewusst HIER in der Methode (nicht oben in der Datei):
+        # So kann kein zirkulaerer Import beim Programmstart entstehen. Die Methode
+        # laeuft nur einmal pro fertiger Geste, der Import kostet also keine Zeit.
+        # -------------------------------------------------------------------
+        from GestureRecognition.labeling import _normalize, _add_velocity
+
+        # 1) Aus den gesammelten Punkten (deque) ein numpy-Array (N, 2) machen.
+        #    Jede Zeile ist eine (x, y)-Fingerposition in Bildkoordinaten [0, 1].
+        trajectory = np.array(list(self.buffer), dtype=float)
+
+        # 2) Normalisieren: Mittelpunkt abziehen und auf den Einheitskreis skalieren.
+        #    Dadurch ist es egal, WO im Bild und WIE GROSS die Geste gemalt wurde.
+        trajectory = _normalize(trajectory)
+
+        # 3) Geschwindigkeit als dritte Spalte anhaengen -> (x, y, velocity).
+        #    velocity = Abstand zum vorherigen Frame; der erste Frame bekommt 0.0.
+        features = _add_velocity(trajectory)
+
+        # 4) Puffer leeren, damit die naechste Geste sauber von vorne beginnt.
         self.buffer.clear()
+
+        # Ergebnis: Array der Form (N, 3) mit Spalten (x, y, velocity) --
+        # identisch zum Trainingsformat, das der HMMClassifier erwartet.
         return features
 
     def stop(self, data):
