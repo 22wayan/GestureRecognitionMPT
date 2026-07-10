@@ -697,6 +697,23 @@ def dataset_building(
             "Bereinigungs-Parameter (min_length, max_jump) lockern."
         )
 
+    # Zusaetzlich zur Pro-Klasse-Pruefung braucht der stratifizierte Split von
+    # sklearn, dass BEIDE Seiten (Train und Test) mindestens so viele Sequenzen
+    # bekommen wie es Klassen gibt. Sonst bricht train_test_split mit einer
+    # schwer verstaendlichen Meldung ab -- typisch waehrend der Datensammlung:
+    # viele Klassen (A-Z) mit noch wenigen Aufnahmen pro Klasse.
+    n_classes = len(class_counts)
+    n_test = int(np.ceil(test_size * len(sequences)))
+    n_train = len(sequences) - n_test
+    if min(n_train, n_test) < n_classes:
+        needed = int(np.ceil(n_classes / min(test_size, 1 - test_size)))
+        raise ValueError(
+            f"Zu wenige Aufnahmen fuer einen stratifizierten Train/Test-Split "
+            f"ueber {n_classes} Klassen (Train {n_train}, Test {n_test} Sequenzen; "
+            f"beide muessen >= {n_classes} sein). Bitte insgesamt mindestens "
+            f"{needed} gueltige Aufnahmen erstellen oder test_size anpassen."
+        )
+
     indices = np.arange(len(sequences))
     train_idx, test_idx = train_test_split(
         indices, test_size=test_size, stratify=labels, random_state=random_state
