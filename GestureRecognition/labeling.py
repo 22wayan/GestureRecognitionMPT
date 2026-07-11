@@ -13,6 +13,46 @@ from sklearn.model_selection import train_test_split
 logger = logging.getLogger(__name__)
 
 
+def _landmark_xy(det, finger_idx: int) -> list[float] | None:
+    """
+    Liest die (x, y)-Position eines Fingers aus einem einzelnen Detector-Frame.
+
+    Unterstützt **zwei** Aufnahme-Formate, damit alte und neue Recordings
+    gleichermaßen gelesen werden können:
+
+    1. **Altes Format** – ``det`` ist ein MediaPipe
+       ``HandLandmarkerResult`` mit ``det.hand_landmarks[0][idx].x/.y``.
+       (So sehen die ursprünglich committeten Aufnahmen aus.)
+    2. **Neues Format** – ``det`` ist ein Dict
+       ``{"hands": [{"landmarks": [{"x", "y", "z"}, ...]}, ...]}``.
+       (So liefert der aktuelle :class:`HandDetector` seine Daten und so
+       landen sie in frisch aufgenommenen Recordings.)
+
+    Returns
+    -------
+    list[float] or None
+        ``[x, y]`` der Fingerspitze, oder ``None`` wenn in diesem Frame
+        keine Hand erkannt wurde.
+    """
+    if not det:
+        return None
+
+    # Neues Format: Dict mit "hands" -> Liste von Händen mit "landmarks".
+    if isinstance(det, dict):
+        hands = det.get("hands") or []
+        if not hands:
+            return None
+        lm = hands[0]["landmarks"][finger_idx]
+        return [lm["x"], lm["y"]]
+
+    # Altes Format: MediaPipe HandLandmarkerResult-Objekt.
+    hand_landmarks = getattr(det, "hand_landmarks", None)
+    if not hand_landmarks:
+        return None
+    lm = hand_landmarks[0][finger_idx]
+    return [lm.x, lm.y]
+
+
 def _extract_trajectory(recording: dict, finger_idx: int) -> np.ndarray | None:
     """
     Extrahiert die (x, y)-Trajektorie eines Fingers aus einer Aufnahme.
@@ -20,6 +60,9 @@ def _extract_trajectory(recording: dict, finger_idx: int) -> np.ndarray | None:
     Hand-lose Frames am Anfang und Ende werden automatisch abgeschnitten.
     Frames ohne erkannte Hand mitten in der Sequenz bleiben erhalten —
     sie werden als ``nan`` eingetragen, damit der Index erhalten bleibt.
+
+    Beide Aufnahme-Formate (altes MediaPipe-Objekt und neues Dict) werden
+    über :func:`_landmark_xy` transparent unterstützt.
 
     Parameters
     ----------
@@ -39,11 +82,7 @@ def _extract_trajectory(recording: dict, finger_idx: int) -> np.ndarray | None:
     points = []
     for frame in frames:
         det = frame.get("detector")
-        if det and len(det.hand_landmarks) > 0:
-            lm = det.hand_landmarks[0][finger_idx]
-            points.append([lm.x, lm.y])
-        else:
-            points.append(None)
+        points.append(_landmark_xy(det, finger_idx))
 
     # Anfang und Ende ohne Hand abschneiden
     start = 0

@@ -179,8 +179,11 @@ class TrailMarker(Module):
             hand = hands[0]  # Assume first hand
             landmarks = hand.get('landmarks', [])
             if len(landmarks) > self.finger_idx:
-                # Extract current finger position
-                pos = (landmarks[self.finger_idx]['x'], landmarks[self.finger_idx]['y'])
+                # Extract current finger position. MediaPipe liefert normierte
+                # Koordinaten (0..1) -- mit der Bildgroesse auf Pixel skalieren,
+                # sonst landet die Spur unsichtbar in der linken oberen Ecke.
+                pos = (landmarks[self.finger_idx]['x'] * self.webcam_width,
+                       landmarks[self.finger_idx]['y'] * self.webcam_height)
                 # Add to deque
                 self.trail.append(pos)
                 # Reset lost counter
