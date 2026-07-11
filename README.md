@@ -320,3 +320,25 @@ HMM-Training. Klassen mit hoher Streuung in Länge und Geschwindigkeit (z. B.
 C, K, X) sollten bei schlechter Klassifikationsleistung zuerst überprüft
 werden — entweder durch zusätzliche, konsistentere Aufnahmen oder durch
 Entfernen einzelner Ausreißer-Sequenzen.
+
+## Ergebnisse
+
+Wie gut erkennt das trainierte Modell die Buchstaben-Gesten? Gemessen mit
+`evaluate_classifier()` auf dem eigenen A–Z-Datensatz:
+
+| Test | Bedeutung | Accuracy |
+|---|---|---|
+| **Standard** | bekannte Personen, neue Aufnahmen | **~79 %** |
+| **Neue Person** | eine Person komplett aus dem Training rausgehalten | **~36 %** |
+
+Die zweite Zahl ist die ehrliche Erwartung für die Prüfung, in der der Prüfer
+live als **völlig neue Person** Gesten aufnimmt.
+
+<img src="docs/source/_static/confusion_matrix.png" width="520">
+
+Die Confusion Matrix zeigt, **welche** Buchstaben verwechselt werden (Zeile =
+wirklich gemacht, Spalte = vom Modell geraten, Diagonale = richtig). Verwechselt
+werden vor allem Buchstaben mit ähnlicher Bewegung (z. B. P↔F, N↔P, E↔S).
+
+➡️ Ausführliche Erklärung, Interpretation und Reproduktions-Anleitung:
+**[docs/ergebnisse.md](docs/ergebnisse.md)**
