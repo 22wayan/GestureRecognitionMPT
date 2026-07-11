@@ -86,6 +86,13 @@ class HMMModule(Module):
         self.score_threshold = -20.0
         self.margin_threshold = 0.5
         self.unknown_label = "?"
+        # Letztes Klassifikationsergebnis merken, damit das Anzeigefenster den
+        # zuletzt erkannten Buchstaben DAUERHAFT zeigt. Ohne das wuerde nur in dem
+        # einen Frame, in dem eine Geste fertig wird, kurz Text erscheinen -- das
+        # Fenster bliebe sonst die meiste Zeit schwarz.
+        self.last_label = "..."
+        self.last_score = 0.0
+        self.last_margin = 0.0
 
     def start(self, data):
         """
@@ -143,9 +150,11 @@ class HMMModule(Module):
     def _build_galy(self, config, label, score, margin):
         galy = GALY()
 
-        width = config.get("webcam", {}).get("width", 640)
-        height = config.get("webcam", {}).get("height", 360)
-        galy.canvas("main", (width, height), (0, 0, 0))
+        # Das Label wird als Overlay-EBENE direkt auf das Kamerabild "Main"
+        # gezeichnet -- genau wie HandDetector ("hands") und TrailMarker ("trail")
+        # es tun. Frueher legte dieses Modul eine EIGENE Flaeche "main" an; die
+        # wurde als separates Fenster geoeffnet, das leer/schwarz blieb. Als Ebene
+        # auf "Main" erscheint das Ergebnis dort, wo der Nutzer ohnehin hinschaut.
         galy.layer("hiddenmarkov")
 
         text_lines = [
@@ -158,6 +167,20 @@ class HMMModule(Module):
             galy.putText(text, (10, 30 + index * 30), color=(255, 255, 255))
 
         return galy
+
+    def _show_last(self, config):
+        """Anzeige der ZULETZT erkannten Geste (ohne neues Ergebnis).
+
+        Wird in jedem Frame benutzt, in dem gerade keine Geste fertig wird, damit
+        das Anzeigefenster den letzten Buchstaben weiter zeigt statt schwarz zu
+        werden.
+        """
+        return {
+            self.outputSignal: None,
+            "galy": self._build_galy(
+                config, self.last_label, self.last_score, self.last_margin
+            ),
+        }
 
     def step(self, data):
         """
@@ -223,19 +246,25 @@ class HMMModule(Module):
         config = data.get("config", {})
 
         if self.classifier is None or trajectory is None:
-            return {self.outputSignal: None}
+            # Keine neue Geste in diesem Frame -> die letzte Erkennung weiter
+            # anzeigen, damit das Fenster nicht schwarz wird.
+            return self._show_last(config)
 
         trajectory = np.asarray(trajectory, dtype=float)
         if trajectory.ndim == 1:
             trajectory = trajectory.reshape(-1, 1)
 
         if trajectory.ndim != 2 or len(trajectory) == 0:
-            return {self.outputSignal: None}
+            # Keine neue Geste in diesem Frame -> die letzte Erkennung weiter
+            # anzeigen, damit das Fenster nicht schwarz wird.
+            return self._show_last(config)
 
         lengths = [len(trajectory)]
         scores = self.classifier.decision_function(trajectory, lengths)
         if scores.size == 0:
-            return {self.outputSignal: None}
+            # Keine neue Geste in diesem Frame -> die letzte Erkennung weiter
+            # anzeigen, damit das Fenster nicht schwarz wird.
+            return self._show_last(config)
 
         score_vector = scores[0]
         normalized_scores = score_vector / max(len(trajectory), 1)
@@ -266,6 +295,12 @@ class HMMModule(Module):
                 "margin_threshold": self.margin_threshold,
             },
         }
+
+        # Neue Erkennung merken, damit sie in den folgenden Frames weiter
+        # angezeigt wird (bis die naechste Geste kommt).
+        self.last_label = label
+        self.last_score = best_score
+        self.last_margin = margin
 
         return {
             self.outputSignal: result,
