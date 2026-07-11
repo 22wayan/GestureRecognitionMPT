@@ -10,7 +10,7 @@ from SignalHub import GALY, bgr, get_nested_key, Module
 mp_hand = mp.tasks.vision.HandLandmarksConnections
 
 
-def draw_hand_landmarks(hand_landmarks, galy: GALY, width: int, height: int):
+def draw_hand_landmarks(hand_landmarks, galy: GALY):
     lm = {
         "thumb":         {"color": bgr("#0000FF")},
         "index_finger":  {"color": bgr("#00FF00")},
@@ -19,22 +19,22 @@ def draw_hand_landmarks(hand_landmarks, galy: GALY, width: int, height: int):
         "pinky_finger":  {"color": bgr("#FF00FF")},
         "palm":          {"color": bgr("#C8C8C8")},
     }
-    # MediaPipe liefert normierte Koordinaten (0..1). GALY zeichnet aber in
-    # Pixeln -- ohne Skalierung mit der Bildgroesse landen alle Punkte in der
-    # linken oberen Ecke (gerundet auf 0/1 px) und sind unsichtbar.
+    x = np.inf
+    y = np.inf
     for key in lm.keys():
         pts = set()
         for conn in getattr(mp_hand, f"HAND_{key.upper()}_CONNECTIONS"):
-            start = (hand_landmarks[conn.start].x * width,
-                     hand_landmarks[conn.start].y * height)
-            end = (hand_landmarks[conn.end].x * width,
-                   hand_landmarks[conn.end].y * height)
+            start = (hand_landmarks[conn.start].x,
+                    hand_landmarks[conn.start].y)
+            end = (hand_landmarks[conn.end].x,
+                hand_landmarks[conn.end].y)
+            x = min(x, start[0], end[0])
+            y = min(y, start[1], end[1])
             galy.line(start, end, lm[key]["color"], 2)
             pts.update([conn.start, conn.end])
         for pt in pts:
-            center = (hand_landmarks[pt].x * width, hand_landmarks[pt].y * height)
-            galy.circle(center, 5, (255, 255, 255), 1)
-            galy.circle(center, 4, lm[key]["color"], -1)
+            galy.circle((hand_landmarks[pt].x, hand_landmarks[pt].y), 5, (255,255,255), 1)
+            galy.circle((hand_landmarks[pt].x, hand_landmarks[pt].y), 4, lm[key]["color"], -1)
 
 
 class HandDetector(Module):
@@ -191,14 +191,22 @@ class HandDetector(Module):
         if image is None:
             return {"detector": {"hands": []}, "galy": galy}
 
+        # MediaPipe gibt jeden Punkt als Zahl zwischen 0 und 1 zurueck (also
+        # relativ zur Bildgroesse). GALY zeichnet aber in echten Pixeln. Wir
+        # muessen die Punkte also umrechnen: x mal Bildbreite, y mal Bildhoehe.
+        # GALY uebernimmt das automatisch, wenn wir ihm diese kleine Matrix geben.
+        height, width = image.shape[:2]
+        mapping = np.array([
+            [width, 0.0, 0.0],   # neues x = Breite * x
+            [0.0, height, 0.0],  # neues y = Hoehe  * y
+        ], dtype=np.float64)
+        galy.set_layer_affine_mapping(mapping)
+
         rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_image)
 
         result = self.detector.detect(mp_image)
         hand_landmarks = getattr(result, "hand_landmarks", []) or []
-
-        # Bildgroesse fuer die Pixel-Skalierung der normierten Landmarks.
-        frame_h, frame_w = image.shape[:2]
 
         hands = []
         for hand_index, landmarks in enumerate(hand_landmarks[:2]):
@@ -211,7 +219,7 @@ class HandDetector(Module):
                 ],
             }
             hands.append(hand_data)
-            draw_hand_landmarks(landmarks, galy, frame_w, frame_h)
+            draw_hand_landmarks(landmarks, galy)
 
         return {"detector": {"hands": hands}, "galy": galy}
 

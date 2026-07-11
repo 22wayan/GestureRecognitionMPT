@@ -1,10 +1,20 @@
 import logging
+import pickle
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 
-from GestureRecognition.labeling import clean_recordings
+from GestureRecognition.hmmclassifier import HMMClassifier
+from GestureRecognition.labeling import (
+    _add_velocity,
+    _extract_trajectory,
+    _is_outlier,
+    _normalize,
+    clean_recordings,
+    dataset_building,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -187,58 +197,216 @@ def visualize_dataset(
     logger.info("Plots gespeichert unter: %s", output_dir)
     return dataset
 
-def evaluate_classifier():
+def _accuracy(y_true, y_pred) -> float:
+    """Anteil korrekter Vorhersagen (einfache Klassifikationsgenauigkeit)."""
+    y_true = list(y_true)
+    if not y_true:
+        return 0.0
+    correct = sum(true == pred for true, pred in zip(y_true, y_pred))
+    return correct / len(y_true)
+
+
+def _person_from_filename(path: str | Path) -> str | None:
     """
-    TODO: Evaluation deines Klassifikators
+    Liest den Personen-Tag aus einem Aufnahme-Dateinamen.
 
-    Ziel:
-    -----
-    Implementiere eine sinnvolle Auswertung deines Modells auf Testdaten.
-
-    Warum ist das wichtig?
-    ----------------------
-    - Du brauchst objektive Metriken für die Qualität deines Modells
-    - Training allein reicht nicht, entscheidend ist die Generalisierung
-
-    Anforderungen / Ideen:
-    ----------------------
-    - Lade ein trainiertes Modell
-    - Lade Testdaten (getrennt vom Training!)
-    - Berechne Vorhersagen
-    - Vergleiche Vorhersagen mit Ground Truth
-
-    Metriken:
-    ---------
-    - Klassifikationsgenauigkeit (Accuracy)
-    - Confusion Matrix
-
-    .. tip::
-       Eine Confusion Matrix zeigt dir:
-         - Welche Klassen gut erkannt werden
-         - Wo dein Modell Fehler macht
-
-    .. warning::
-       Testdaten dürfen **nicht** aus dem Training stammen!
-
-    Interpretation:
-    ---------------
-    Du solltest erklären können:
-    - Welche Klassen gut funktionieren
-    - Welche Klassen verwechselt werden
-    - Warum das passieren könnte
-
-    .. note::
-       Schlechte Performance liegt oft an:
-         - schlechten Trainingsdaten
-         - zu wenigen Beispielen
-         - ungeeigneten Features
-
-    Erweiterung (optional):
-    -----------------------
-    - Weitere Metriken (Precision, Recall, F1)
-    - Vergleich verschiedener Modelle
+    Aufnahmen heißen ``<L>-<person>-<n>.pkl`` (z.B. ``A-yannik-1.pkl``). Alte
+    Aufnahmen ohne Person heißen ``<L>-<timestamp>.pkl`` — dort ist das zweite
+    Feld eine Zahl. Für diese gibt es keinen Personen-Tag → ``None``.
     """
-    pass
+    parts = Path(path).stem.split("-")
+    if len(parts) >= 3 and not parts[1].replace(".", "").isdigit():
+        return parts[1]
+    return None
+
+
+def _load_by_person(
+    recordings_dir: str | Path = "recordings",
+    finger_idx: int = 8,
+    min_length: int = 15,
+    max_jump: float = 0.15,
+) -> list[tuple[np.ndarray, str, str | None]]:
+    """
+    Lädt alle Aufnahmen und behält je Sequenz den Personen-Tag.
+
+    Die Filter sind identisch zu :func:`dataset_building` (zu kurz /
+    Tracking-Sprung / NaN werden verworfen), damit die Neue-Person-Bewertung
+    dieselben Features nutzt wie das Standard-Training.
+
+    Returns
+    -------
+    list of (traj, label, person)
+        ``traj`` hat Form (N, 3) mit (x, y, velocity); ``person`` ist ``None``
+        für alte Aufnahmen ohne Namen.
+    """
+    recordings_dir = Path(recordings_dir)
+    samples: list[tuple[np.ndarray, str, str | None]] = []
+
+    for label_dir in sorted(recordings_dir.iterdir()):
+        if not label_dir.is_dir():
+            continue
+        label = label_dir.name
+        for pkl_file in sorted(label_dir.glob("*.pkl")):
+            with open(pkl_file, "rb") as f:
+                recording = pickle.load(f)
+
+            traj = _extract_trajectory(recording, finger_idx)
+            if traj is None or len(traj) < min_length:
+                continue
+            if _is_outlier(traj, max_jump):
+                continue
+            traj = _normalize(traj)
+            traj = _add_velocity(traj)
+            if np.isnan(traj).any():  # gleicher NaN-Skip wie dataset_building
+                continue
+
+            samples.append((traj, label, _person_from_filename(pkl_file)))
+
+    return samples
+
+
+def _split_by_person(
+    samples: list[tuple[np.ndarray, str, str | None]], held_out_person: str
+) -> tuple[list, list]:
+    """
+    Teilt die Samples anhand der Person in Train/Test.
+
+    Test = alle Sequenzen von ``held_out_person``; Train = alle übrigen
+    (inklusive alter Aufnahmen ohne Namen). So testet man gegen eine Person,
+    die das Modell nie gesehen hat — das simuliert den Prüfer.
+    """
+    train = [(traj, label) for traj, label, person in samples if person != held_out_person]
+    test = [(traj, label) for traj, label, person in samples if person == held_out_person]
+    return train, test
+
+
+def _pack(pairs: list[tuple[np.ndarray, str]]) -> tuple[np.ndarray, np.ndarray, list[int]]:
+    """Baut aus (traj, label)-Paaren die (X, y, lengths)-Struktur für den Classifier."""
+    seqs = [traj for traj, _ in pairs]
+    labels = [label for _, label in pairs]
+    X = np.vstack(seqs)
+    y = np.array(labels)
+    lengths = [len(seq) for seq in seqs]
+    return X, y, lengths
+
+
+def _plot_confusion_matrix(
+    y_true, y_pred, classes, output_path: Path, title: str
+) -> np.ndarray:
+    """Zeichnet die Confusion Matrix als Heatmap und speichert sie als PNG."""
+    cm = confusion_matrix(y_true, y_pred, labels=classes)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=classes)
+    fig, ax = plt.subplots(figsize=(10, 9))
+    disp.plot(ax=ax, cmap="Blues", colorbar=False, xticks_rotation="vertical")
+    ax.set_title(title)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+    return cm
+
+
+def evaluate_classifier(
+    recordings_dir: str | Path = "recordings",
+    output_dir: str | Path = "plots",
+    held_out_person: str = "yannik",
+    test_size: float = 0.2,
+    random_state: int = 42,
+) -> dict:
+    """
+    Bewertet den HMM-Klassifikator mit zwei Zahlen und einer Confusion Matrix.
+
+    Es werden absichtlich ZWEI Genauigkeiten berechnet, weil sie zwei
+    verschiedene Fragen beantworten:
+
+    1. **Standard-Accuracy** (gleiche Personen, unbekannte Aufnahmen): Der
+       Datensatz wird über :func:`dataset_building` sequenzweise & stratifiziert
+       in Train/Test getrennt (kein Data-Leakage). Darauf wird ein
+       :class:`HMMClassifier` trainiert und Accuracy + eine Confusion Matrix auf
+       dem Test-Split berechnet. Diese Zahl ist optimistisch, weil jede Person
+       auch im Training vorkommt.
+    2. **Neue-Person-Accuracy** (Generalisierung): Das gleiche Modell wird einmal
+       komplett OHNE ``held_out_person`` trainiert und nur auf dieser Person
+       getestet. Das simuliert den Prüfer, den das Modell nie gesehen hat, und
+       ist die ehrliche Schätzung der Generalisierung.
+
+    Der Klassifikator wird hier selbst trainiert (statt ``data/hmm.pkl`` zu
+    laden), damit Modell und Test-Split garantiert aus demselben Split stammen —
+    das schließt versehentliches Data-Leakage aus.
+
+    Parameters
+    ----------
+    recordings_dir : str or Path
+        Verzeichnis mit den Aufnahmen (``recordings/<label>/*.pkl``).
+    output_dir : str or Path
+        Zielverzeichnis für die Confusion-Matrix-PNG.
+    held_out_person : str
+        Person, die für die Neue-Person-Bewertung komplett zurückgehalten wird.
+        Sollte alle Klassen abdecken (Default: ``"yannik"``).
+    test_size, random_state
+        Parameter für den stratifizierten Standard-Split.
+
+    Returns
+    -------
+    dict
+        ``{"accuracy_standard", "accuracy_new_person", "held_out_person"}``.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # --- Teil A: Standard-Bewertung (gleiche Personen, unbekannte Aufnahmen) ---
+    data = dataset_building(
+        "data/dataset.pkl",
+        recordings_dir=recordings_dir,
+        test_size=test_size,
+        random_state=random_state,
+    )
+    clf = HMMClassifier().fit(data["X_train"], data["y_train"], data["lengths_train"])
+    y_pred = clf.predict(data["X_test"], data["lengths_test"])
+    acc_standard = _accuracy(data["y_test"], y_pred)
+    _plot_confusion_matrix(
+        data["y_test"],
+        y_pred,
+        data["classes"],
+        output_dir / "confusion_matrix.png",
+        f"Confusion Matrix — Standard-Test (Accuracy {acc_standard:.1%})",
+    )
+
+    # --- Teil B: Neue-Person-Bewertung (eine Person komplett raushalten) ---
+    samples = _load_by_person(recordings_dir)
+    train_pairs, test_pairs = _split_by_person(samples, held_out_person)
+    if not test_pairs:
+        raise ValueError(
+            f"Keine Aufnahmen fuer held_out_person='{held_out_person}' gefunden. "
+            "Bitte eine Person angeben, die als <L>-<person>-<n>.pkl aufgenommen hat."
+        )
+    if not train_pairs:
+        raise ValueError("Kein Trainingsmaterial nach dem Personen-Split uebrig.")
+
+    X_tr, y_tr, len_tr = _pack(train_pairs)
+    X_te, y_te, len_te = _pack(test_pairs)
+
+    missing = sorted(set(y_te.tolist()) - set(y_tr.tolist()))
+    if missing:
+        logger.warning(
+            "Klassen ohne Trainingsdaten nach Holdout (koennen nie erkannt werden): %s",
+            missing,
+        )
+
+    clf_holdout = HMMClassifier().fit(X_tr, y_tr, len_tr)
+    acc_new = _accuracy(y_te, clf_holdout.predict(X_te, len_te))
+
+    logger.info(
+        "Standard (gleiche Personen): %.1f%%  |  Neue Person (%s): %.1f%%",
+        acc_standard * 100,
+        held_out_person,
+        acc_new * 100,
+    )
+
+    return {
+        "accuracy_standard": acc_standard,
+        "accuracy_new_person": acc_new,
+        "held_out_person": held_out_person,
+    }
 
 
 def replay_recordings():

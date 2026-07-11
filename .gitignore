@@ -14,3 +14,12 @@ data
 .training.py
 plots/
 reports/
+
+# Aussortierte (schlechte) Aufnahmen aus review_recordings.py
+recordings_rejected/
+
+# macOS
+.DS_Store
+
+# Versehentlich eingecheckter, verschachtelter Repo-Klon (Phantom-Gitlink)
+/GestureRecognitionMPT/

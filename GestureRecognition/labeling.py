@@ -13,46 +13,6 @@ from sklearn.model_selection import train_test_split
 logger = logging.getLogger(__name__)
 
 
-def _landmark_xy(det, finger_idx: int) -> list[float] | None:
-    """
-    Liest die (x, y)-Position eines Fingers aus einem einzelnen Detector-Frame.
-
-    Unterstützt **zwei** Aufnahme-Formate, damit alte und neue Recordings
-    gleichermaßen gelesen werden können:
-
-    1. **Altes Format** – ``det`` ist ein MediaPipe
-       ``HandLandmarkerResult`` mit ``det.hand_landmarks[0][idx].x/.y``.
-       (So sehen die ursprünglich committeten Aufnahmen aus.)
-    2. **Neues Format** – ``det`` ist ein Dict
-       ``{"hands": [{"landmarks": [{"x", "y", "z"}, ...]}, ...]}``.
-       (So liefert der aktuelle :class:`HandDetector` seine Daten und so
-       landen sie in frisch aufgenommenen Recordings.)
-
-    Returns
-    -------
-    list[float] or None
-        ``[x, y]`` der Fingerspitze, oder ``None`` wenn in diesem Frame
-        keine Hand erkannt wurde.
-    """
-    if not det:
-        return None
-
-    # Neues Format: Dict mit "hands" -> Liste von Händen mit "landmarks".
-    if isinstance(det, dict):
-        hands = det.get("hands") or []
-        if not hands:
-            return None
-        lm = hands[0]["landmarks"][finger_idx]
-        return [lm["x"], lm["y"]]
-
-    # Altes Format: MediaPipe HandLandmarkerResult-Objekt.
-    hand_landmarks = getattr(det, "hand_landmarks", None)
-    if not hand_landmarks:
-        return None
-    lm = hand_landmarks[0][finger_idx]
-    return [lm.x, lm.y]
-
-
 def _extract_trajectory(recording: dict, finger_idx: int) -> np.ndarray | None:
     """
     Extrahiert die (x, y)-Trajektorie eines Fingers aus einer Aufnahme.
@@ -60,9 +20,6 @@ def _extract_trajectory(recording: dict, finger_idx: int) -> np.ndarray | None:
     Hand-lose Frames am Anfang und Ende werden automatisch abgeschnitten.
     Frames ohne erkannte Hand mitten in der Sequenz bleiben erhalten —
     sie werden als ``nan`` eingetragen, damit der Index erhalten bleibt.
-
-    Beide Aufnahme-Formate (altes MediaPipe-Objekt und neues Dict) werden
-    über :func:`_landmark_xy` transparent unterstützt.
 
     Parameters
     ----------
@@ -81,8 +38,29 @@ def _extract_trajectory(recording: dict, finger_idx: int) -> np.ndarray | None:
 
     points = []
     for frame in frames:
+        # Manche Frames sind None (z.B. wird das stop()-Ergebnis des Detectors
+        # mitgespeichert). Solche behandeln wir wie "keine Hand erkannt".
+        if not isinstance(frame, dict):
+            points.append(None)
+            continue
+
         det = frame.get("detector")
-        points.append(_landmark_xy(det, finger_idx))
+        point = None  # Standard: in diesem Frame keine Hand gefunden
+
+        # Es gibt zwei Aufnahme-Formate -- wir unterstuetzen beide:
+        if hasattr(det, "hand_landmarks"):
+            # 1) Alte Aufnahmen: rohes MediaPipe-Objekt (hat .hand_landmarks)
+            if len(det.hand_landmarks) > 0:
+                lm = det.hand_landmarks[0][finger_idx]
+                point = [lm.x, lm.y]
+        elif isinstance(det, dict):
+            # 2) Neue Aufnahmen: einfaches Dict {"hands": [{"landmarks": [...]}]}
+            hands = det.get("hands", [])
+            if hands:
+                lm = hands[0]["landmarks"][finger_idx]
+                point = [lm["x"], lm["y"]]
+
+        points.append(point)
 
     # Anfang und Ende ohne Hand abschneiden
     start = 0
@@ -448,10 +426,29 @@ def _next_person_take_path(label_dir: Path, letter: str, person: str) -> Path:
     return label_dir / f"{letter}-{person}-{n}.pkl"
 
 
+def _letter_range(start: str | None, end: str | None) -> list[str]:
+    """
+    Baut die Liste der aufzunehmenden Buchstaben aus optionalem Start/Ende.
+
+    ``start``/``end`` sind einzelne Buchstaben (A-Z, Gross-/Kleinschreibung
+    egal). Fehlt ``start``, wird bei "A" begonnen; fehlt ``end``, bis "Z".
+    """
+    s = (start or "A").strip().upper()
+    e = (end or "Z").strip().upper()
+    for name, val in (("start", s), ("end", e)):
+        if len(val) != 1 or not ("A" <= val <= "Z"):
+            raise ValueError(f"{name} muss ein einzelner Buchstabe A-Z sein, war '{val}'.")
+    if s > e:
+        raise ValueError(f"start ({s}) liegt hinter end ({e}).")
+    return [chr(c) for c in range(ord(s), ord(e) + 1)]
+
+
 def collect_alphabet(
     person: str,
     times: int = 15,
     recordings_dir: str | Path = "recordings",
+    start: str | None = None,
+    end: str | None = None,
 ):
     """
     Gefuehrter Aufnahme-Durchlauf: jeder Buchstabe A-Z mehrfach pro Person.
@@ -494,10 +491,16 @@ def collect_alphabet(
 
     recordings_dir = Path(recordings_dir)
 
+    # Welche Buchstaben werden in diesem Durchlauf aufgenommen?
+    letters = _letter_range(start, end)
+
     # Kurze Anleitung ausgeben
     print("=" * 50)
     print(f"Alphabet-Aufnahme fuer: {person}")
-    print(f"Es werden alle {len(ALPHABET)} Buchstaben (A-Z) je {times}x aufgenommen.")
+    print(
+        f"Es werden die Buchstaben {letters[0]}-{letters[-1]} "
+        f"({len(letters)} Stueck) je {times}x aufgenommen."
+    )
     print("Bereits aufgenommene Takes werden uebersprungen.")
     print("Ablauf pro Buchstabe:")
     print("  1. ENTER druecken, dann fuehrt sich das Aufnahme-Fenster.")
@@ -509,7 +512,7 @@ def collect_alphabet(
     skipped = 0
 
     aborted = False
-    for i, letter in enumerate(ALPHABET, start=1):
+    for i, letter in enumerate(letters, start=1):
         label_dir = recordings_dir / letter
         label_dir.mkdir(parents=True, exist_ok=True)
 
@@ -517,7 +520,7 @@ def collect_alphabet(
         have_letter = _person_takes(label_dir, letter, person)
         if have_letter >= times:
             print(
-                f"[{i}/{len(ALPHABET)}] {letter}: bereits {have_letter}/{times} "
+                f"[{i}/{len(letters)}] {letter}: bereits {have_letter}/{times} "
                 "-> uebersprungen"
             )
             skipped += 1
@@ -531,7 +534,7 @@ def collect_alphabet(
             print("#" * 50)
             print(
                 f"#   Buchstabe:  {letter}   Take {take_no}/{times}   "
-                f"[{i}/{len(ALPHABET)}]"
+                f"[{i}/{len(letters)}]"
             )
             print("#" * 50)
             input("Druecke ENTER, um die Aufnahme zu starten ...")
@@ -569,17 +572,17 @@ def collect_alphabet(
 
     # Abschluss: wie viele Buchstaben hat diese Person nun vollstaendig (times Takes)?
     complete = sum(
-        1 for letter in ALPHABET
+        1 for letter in letters
         if _person_takes(recordings_dir / letter, letter, person) >= times
     )
     print()
     print("=" * 50)
     print(f"Fertig. Neu gespeichert: {saved}, uebersprungen: {skipped}.")
     print(
-        f"'{person}' hat jetzt {complete}/{len(ALPHABET)} Buchstaben "
-        f"vollstaendig ({times} Takes)."
+        f"'{person}' hat jetzt {complete}/{len(letters)} Buchstaben "
+        f"aus {letters[0]}-{letters[-1]} vollstaendig ({times} Takes)."
     )
-    if complete < len(ALPHABET):
+    if complete < len(letters):
         print("Tipp: Skript erneut starten, um die fehlenden Takes zu ergaenzen.")
     print("=" * 50)
 
@@ -692,6 +695,23 @@ def dataset_building(
             "mindestens 2 gueltige Aufnahmen benoetigt. Zu wenige Aufnahmen "
             f"bei: {details}. Bitte mehr Aufnahmen erstellen oder die "
             "Bereinigungs-Parameter (min_length, max_jump) lockern."
+        )
+
+    # Zusaetzlich zur Pro-Klasse-Pruefung braucht der stratifizierte Split von
+    # sklearn, dass BEIDE Seiten (Train und Test) mindestens so viele Sequenzen
+    # bekommen wie es Klassen gibt. Sonst bricht train_test_split mit einer
+    # schwer verstaendlichen Meldung ab -- typisch waehrend der Datensammlung:
+    # viele Klassen (A-Z) mit noch wenigen Aufnahmen pro Klasse.
+    n_classes = len(class_counts)
+    n_test = int(np.ceil(test_size * len(sequences)))
+    n_train = len(sequences) - n_test
+    if min(n_train, n_test) < n_classes:
+        needed = int(np.ceil(n_classes / min(test_size, 1 - test_size)))
+        raise ValueError(
+            f"Zu wenige Aufnahmen fuer einen stratifizierten Train/Test-Split "
+            f"ueber {n_classes} Klassen (Train {n_train}, Test {n_test} Sequenzen; "
+            f"beide muessen >= {n_classes} sein). Bitte insgesamt mindestens "
+            f"{needed} gueltige Aufnahmen erstellen oder test_size anpassen."
         )
 
     indices = np.arange(len(sequences))
