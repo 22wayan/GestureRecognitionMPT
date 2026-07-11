@@ -21,14 +21,23 @@ webcam:
   flip: True
 preprocessor:
   finger_idx: 8
-  min_speed_corner: 0.02
-  reset_speed_corner: 0.024
+  # Hysterese fuer die Gesten-Segmentierung.
+  # WICHTIG: Die Start-Schwelle muss GROESSER sein als die Stopp-Schwelle.
+  # Sonst wird die Geste bei jeder kleinen Tempo-Delle sofort beendet und in
+  # winzige Fetzen zerhackt -- der Klassifikator sieht dann nur Teil-Gesten und
+  # gibt fast immer "?" aus. Mit niedriger Stopp-Schwelle endet die Geste erst,
+  # wenn die Hand nahezu steht oder aus dem Bild genommen wird (wie beim Training).
+  min_speed_corner: 0.005    # Start: ab dieser Bewegung beginnt das Sammeln
+  reset_speed_corner: 0.001  # Stopp: erst wenn die Hand fast steht, endet die Geste
   buffer_size: 140
   max_lost: 10
   min_steps: 15
 hiddenmarkov:
   score_threshold: -20.0
-  margin_threshold: 0.5
+  # margin_threshold: Mindest-Abstand zwischen bestem und zweitbestem Buchstaben.
+  # 0.5 war zu streng und hat selbst korrekte Top-Tipps als "?" verworfen. 0.1
+  # zeigt den besten Tipp an und behaelt "?" nur fuer wirklich mehrdeutige Gesten.
+  margin_threshold: 0.1
   unknown_label: "?"
 trailmarker:
   finger_idx: 8
