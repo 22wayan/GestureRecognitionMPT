@@ -219,6 +219,9 @@ class Preprocessor(Module):
                     # Process the trajectory if enough points.
                     if len(self.buffer) >= self.min_steps:
                         trajectory = self.process_trajectory()
+                        # Puffer nach dem Emittieren leeren, damit die naechste
+                        # Geste sauber startet (ohne Reste der vorherigen).
+                        self.buffer.clear()
                         return {self.outputSignal: trajectory}
                     else:
                         # Discard if not enough points.
@@ -233,6 +236,9 @@ class Preprocessor(Module):
                 self.is_moving = False
                 if len(self.buffer) >= self.min_steps:
                     trajectory = self.process_trajectory()
+                    # Puffer nach dem Emittieren leeren (wie oben), damit die
+                    # naechste Geste nicht mit Resten der vorherigen startet.
+                    self.buffer.clear()
                     return {self.outputSignal: trajectory}
                 else:
                     self.buffer.clear()
