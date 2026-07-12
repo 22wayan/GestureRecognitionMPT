@@ -61,7 +61,7 @@ def train(
     recordings_dir="recordings",
     model_path="data/hmm.pkl",
     dataset_path="data/dataset.pkl",
-    n_components=4,
+    n_components=8,
     use_grid_search=False,
     test_size=0.2,
     random_state=42,
@@ -144,8 +144,8 @@ def main():
         help="Zielpfad fuer den erzeugten Datensatz (Standard: data/dataset.pkl)",
     )
     parser.add_argument(
-        "--n-components", type=int, default=4,
-        help="Anzahl Zustaende pro HMM (Standard: 4)",
+        "--n-components", type=int, default=8,
+        help="Anzahl Zustaende pro HMM (Standard: 8)",
     )
     parser.add_argument(
         "--grid-search", action="store_true",

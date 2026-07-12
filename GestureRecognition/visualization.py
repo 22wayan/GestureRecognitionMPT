@@ -12,6 +12,7 @@ from GestureRecognition.labeling import (
     _extract_trajectory,
     _is_outlier,
     _normalize,
+    _to_features,
     clean_recordings,
     dataset_building,
 )
@@ -255,8 +256,7 @@ def _load_by_person(
                 continue
             if _is_outlier(traj, max_jump):
                 continue
-            traj = _normalize(traj)
-            traj = _add_velocity(traj)
+            traj = _to_features(traj)  # resample + normalize + velocity (wie dataset_building)
             if np.isnan(traj).any():  # gleicher NaN-Skip wie dataset_building
                 continue
 

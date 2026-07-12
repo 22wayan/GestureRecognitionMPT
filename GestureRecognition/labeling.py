@@ -13,6 +13,50 @@ from sklearn.model_selection import train_test_split
 logger = logging.getLogger(__name__)
 
 
+# So viele Punkte soll am Ende jede Geste haben.
+# Warum: Manche malen schnell (wenige Punkte), manche langsam (viele Punkte).
+# Wenn alle Gesten gleich viele Punkte haben, ist das Tempo egal und das Modell
+# erkennt sie besser.
+RESAMPLE_LENGTH = 48
+
+
+def _resample(traj, n):
+    """Bringt die Punkte einer Geste auf genau n Punkte (gleichmaessig verteilt).
+
+    Idee wie ein Bild auf eine feste Groesse ziehen: eine schnell und eine langsam
+    gemalte Geste haben danach gleich viele Punkte und sehen fuer das Modell gleich aus.
+    """
+    # Zu kurz oder schon die richtige Anzahl? Dann einfach so lassen.
+    if n is None or len(traj) < 2 or len(traj) == n:
+        return traj
+    # Die alten Punkte gleichmaessig auf 0..1 legen, die neuen Punkte auch auf 0..1.
+    alte_stellen = np.linspace(0, 1, len(traj))
+    neue_stellen = np.linspace(0, 1, n)
+    # np.interp rechnet die Zwischenwerte aus -- fuer x und y getrennt.
+    x = np.interp(neue_stellen, alte_stellen, traj[:, 0])
+    y = np.interp(neue_stellen, alte_stellen, traj[:, 1])
+    # x und y wieder nebeneinander zu einer Punkte-Liste zusammensetzen.
+    return np.column_stack([x, y])
+
+
+def _to_features(traj, resample_length=RESAMPLE_LENGTH):
+    """Macht aus den rohen Punkten die Zahlen, die das Modell zum Lernen braucht.
+
+    Drei einfache Schritte nacheinander:
+      1. _resample     -> alle Gesten auf gleich viele Punkte bringen
+      2. _normalize    -> Lage und Groesse angleichen (egal wo/wie gross gemalt)
+      3. _add_velocity -> Geschwindigkeit als dritte Spalte anhaengen
+    Ergebnis: eine Liste mit (x, y, geschwindigkeit) pro Punkt.
+
+    Wichtig: Training UND Live rufen genau diese Funktion auf. So haben beide
+    immer das gleiche Format und koennen nie auseinanderlaufen.
+    """
+    traj = _resample(traj, resample_length)
+    traj = _normalize(traj)
+    traj = _add_velocity(traj)
+    return traj
+
+
 def _extract_trajectory(recording: dict, finger_idx: int) -> np.ndarray | None:
     """
     Extrahiert die (x, y)-Trajektorie eines Fingers aus einer Aufnahme.
@@ -237,8 +281,7 @@ def clean_recordings(
                 logger.info("[%s] %s verworfen: Tracking-Sprung erkannt", label, pkl_file.name)
                 continue
 
-            traj = _normalize(traj)
-            traj = _add_velocity(traj)
+            traj = _to_features(traj)
             kept.append(traj)
 
         total = sum(stats.values()) + len(kept)

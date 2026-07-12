@@ -298,19 +298,16 @@ class Preprocessor(Module):
         # So kann kein zirkulaerer Import beim Programmstart entstehen. Die Methode
         # laeuft nur einmal pro fertiger Geste, der Import kostet also keine Zeit.
         # -------------------------------------------------------------------
-        from GestureRecognition.labeling import _normalize, _add_velocity
+        # Wir benutzen genau dieselbe Funktion wie das Training (_to_features).
+        # So bekommt das Modell live die gleichen Zahlen wie beim Lernen.
+        from GestureRecognition.labeling import _to_features
 
-        # 1) Aus den gesammelten Punkten (deque) ein numpy-Array (N, 2) machen.
-        #    Jede Zeile ist eine (x, y)-Fingerposition in Bildkoordinaten [0, 1].
+        # 1) Aus den gesammelten Punkten eine Liste von (x, y) machen.
         trajectory = np.array(list(self.buffer), dtype=float)
 
-        # 2) Normalisieren: Mittelpunkt abziehen und auf den Einheitskreis skalieren.
-        #    Dadurch ist es egal, WO im Bild und WIE GROSS die Geste gemalt wurde.
-        trajectory = _normalize(trajectory)
-
-        # 3) Geschwindigkeit als dritte Spalte anhaengen -> (x, y, velocity).
-        #    velocity = Abstand zum vorherigen Frame; der erste Frame bekommt 0.0.
-        features = _add_velocity(trajectory)
+        # 2) In das fertige Format bringen: gleich viele Punkte + normalisieren
+        #    + Geschwindigkeit -> (x, y, geschwindigkeit) pro Punkt.
+        features = _to_features(trajectory)
 
         # 4) Puffer leeren, damit die naechste Geste sauber von vorne beginnt.
         self.buffer.clear()
