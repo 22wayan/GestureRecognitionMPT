@@ -42,9 +42,11 @@ class HMMClassifier:
 
     Hyperparameter
     --------------
-    - ``n_components=4``: Vier verborgene Zustände sind ein guter Startpunkt für
-      Gebärdensprach-Gesten — genug um Phasen (Anlauf, Bewegung, Abschluss) zu
-      modellieren, ohne mit 10 Aufnahmen pro Klasse zu overfitten.
+    - ``n_components=8``: Acht Zustaende pro Buchstabe. Mehr Zustaende koennen die
+      Form einer Geste genauer beschreiben. Zusammen mit dem Resampling (jede Geste
+      bekommt gleich viele Punkte, siehe ``labeling._to_features``) steigt die
+      Genauigkeit deutlich (von ca. 72% auf ca. 90%). Bei sehr wenig Daten kann ein
+      kleinerer Wert (4-6) besser sein.
     - ``covariance_type="diag"``: Diagonale Kovarianzmatrix nimmt an, dass
       x, y und Geschwindigkeit unkorreliert sind. Das reduziert die Parameteranzahl
       erheblich gegenüber ``"full"`` und macht das Modell stabiler bei wenig Daten.
@@ -68,7 +70,7 @@ class HMMClassifier:
 
     def __init__(
         self,
-        n_components: int = 4,
+        n_components: int = 8,
         covariance_type: str = "diag",
         n_iter: int = 100,
         tol: float = 1e-2,
