@@ -49,6 +49,10 @@ def _plot_trajectories(dataset: dict[str, list[np.ndarray]], colors: dict, outpu
         ax.set_aspect("equal")
         ax.set_xticks([])
         ax.set_yticks([])
+        # Bild-/MediaPipe-y waechst nach UNTEN, matplotlib-y nach OBEN. Ohne diese
+        # Zeile stuenden die Buchstaben auf dem Kopf (U -> Bogen). invert_yaxis()
+        # bringt die Bahn in echte Bildkoordinaten, also aufrecht wie gezeichnet.
+        ax.invert_yaxis()
 
     for ax in axes[len(classes):]:
         ax.axis("off")
@@ -409,46 +413,220 @@ def evaluate_classifier(
     }
 
 
-def replay_recordings():
+# --- Replay / Galerie der Rohaufnahmen -------------------------------------
+#
+# Jede einzelne Aufnahme bekommt einen Status. "ok" ist eine saubere Aufnahme,
+# alles andere ist ein Grund, sie kritisch anzuschauen. Wir werfen schlechte
+# Aufnahmen hier NICHT weg (anders als clean_recordings) -- die Galerie soll sie
+# ja gerade sichtbar machen.
+_STATUS_OK = "ok"
+_STATUS_KURZ = "kurz"              # zu wenige Frames (unter min_length)
+_STATUS_SPRUNG = "sprung"          # Tracking-Sprung: Hand kurz verloren und weit weg wiedergefunden
+_STATUS_KEINE_HAND = "keine_hand"  # in keinem Frame eine Hand erkannt
+
+# Kurze rote Beschriftung fuer markierte Kacheln.
+_STATUS_LABELS = {
+    _STATUS_KURZ: "kurz",
+    _STATUS_SPRUNG: "Sprung",
+    _STATUS_KEINE_HAND: "keine Hand",
+}
+
+
+def _load_recordings_with_status(
+    recordings_dir: str | Path,
+    finger_idx: int = 8,
+    min_length: int = 15,
+    max_jump: float = 0.15,
+) -> dict[str, list[dict]]:
     """
-    TODO: Exploration und Replay der aufgenommenen Rohdaten
+    Laedt JEDE Aufnahme (auch die schlechten) und haengt einen Status an.
 
-    Ziel:
-    -----
-    Ermögliche es, aufgenommene Sequenzen erneut abzuspielen
-    und qualitativ zu überprüfen.
+    Die Filtergrenze ist dieselbe wie in :func:`clean_recordings` (dem
+    Training) -- nur dass wir hier nichts wegwerfen, sondern jede Aufnahme
+    markieren. Zusaetzlich unterscheiden wir "gar keine Hand erkannt" extra
+    (das faellt beim Training unter "zu kurz"). So sieht man auf einen Blick,
+    welche Aufnahmen ins Training kommen und welche aussortiert werden.
 
-    Warum ist das wichtig?
-    ----------------------
-    - Du kannst überprüfen, ob deine Aufnahmen korrekt sind
-    - Fehler in der Datenerfassung werden früh sichtbar
-    - Du entwickelst ein besseres Verständnis für deine Daten
+    Parameters
+    ----------
+    recordings_dir : str or Path
+        Verzeichnis mit den Label-Unterordnern (``recordings/<label>/*.pkl``).
+    finger_idx : int
+        MediaPipe-Landmark-Index des verfolgten Fingers (8 = Zeigefingerspitze).
+    min_length, max_jump
+        Gleiche Schwellen wie beim Training (siehe :func:`clean_recordings`).
 
-    Anforderungen / Ideen:
-    ----------------------
-    - Lade gespeicherte Aufnahmen
-    - Spiele diese erneut ab (z. B. über SignalHub / Replay-Modus)
-    - Iteriere über verschiedene Labels und Beispiele
-
-    .. tip::
-       Besonders hilfreich:
-         - Vergleiche mehrere Beispiele derselben Klasse
-         - Suche nach inkonsistenten Bewegungen
-
-    .. warning::
-       Schlechte oder inkonsistente Aufnahmen führen fast immer zu
-       schlechten Modellen. Überprüfe deine Daten frühzeitig!
-
-    Abgabe:
+    Returns
     -------
-    - Du solltest zeigen können, wie deine Daten aussehen (Replay)
-    - Du solltest erklären können:
-        - Welche Beispiele gut sind
-        - Welche problematisch sind
-
-    Erweiterung (optional):
-    -----------------------
-    - Automatisches Filtern schlechter Sequenzen
-    - Kombination mit Visualisierung
+    dict[str, list[dict]]
+        Pro Buchstabe eine Liste von Eintraegen
+        ``{"name": str, "traj": np.ndarray | None, "status": str}``.
+        ``traj`` ist die normalisierte (x, y)-Bahn zum Anzeigen, oder ``None``,
+        wenn gar keine Hand erkannt wurde.
     """
-    pass
+    recordings_dir = Path(recordings_dir)
+    galerie: dict[str, list[dict]] = {}
+
+    for label_dir in sorted(recordings_dir.iterdir()):
+        if not label_dir.is_dir():
+            continue
+
+        eintraege: list[dict] = []
+        for pkl_file in sorted(label_dir.glob("*.pkl")):
+            with open(pkl_file, "rb") as f:
+                recording = pickle.load(f)
+
+            traj = _extract_trajectory(recording, finger_idx)
+
+            # Status nach denselben Regeln wie clean_recordings bestimmen.
+            # Reihenfolge ist wichtig: erst "gar keine Hand", dann "zu kurz",
+            # dann "Sprung", sonst "ok".
+            if traj is None:
+                status = _STATUS_KEINE_HAND
+            elif len(traj) < min_length:
+                status = _STATUS_KURZ
+            elif _is_outlier(traj, max_jump):
+                status = _STATUS_SPRUNG
+            else:
+                status = _STATUS_OK
+
+            # Fuer die Anzeige Lage und Groesse angleichen, damit alle Kacheln
+            # vergleichbar aussehen (egal wo/wie gross gemalt wurde).
+            traj_xy = _normalize(traj) if traj is not None else None
+            eintraege.append({"name": pkl_file.stem, "traj": traj_xy, "status": status})
+
+        galerie[label_dir.name] = eintraege
+
+    return galerie
+
+
+def _plot_letter_gallery(
+    label: str, eintraege: list[dict], color, output_path: Path, cols: int
+) -> None:
+    """
+    Zeichnet alle Aufnahmen EINES Buchstabens als Kachel-Raster in ein PNG.
+
+    Jede Kachel zeigt die (x, y)-Bahn einer einzelnen Aufnahme mit Startpunkt.
+    Markierte (schlechte) Aufnahmen bekommen einen roten Rahmen und den Grund
+    als rote Beschriftung -- so springt jede problematische Sequenz ins Auge.
+    """
+    n = len(eintraege)
+    # Bei wenigen Aufnahmen nicht unnoetig breit werden: hoechstens n Spalten.
+    cols = min(cols, max(n, 1))
+    rows = int(np.ceil(n / cols))
+    fig, axes = plt.subplots(rows, cols, figsize=(1.4 * cols, 1.6 * rows))
+    axes = np.atleast_1d(axes).flatten()
+
+    for ax, eintrag in zip(axes, eintraege):
+        traj = eintrag["traj"]
+        status = eintrag["status"]
+
+        # Die Bahn zeichnen (falls eine Hand da war).
+        if traj is not None and len(traj) > 0:
+            ax.plot(traj[:, 0], traj[:, 1], color=color, linewidth=1)
+            # Startpunkt markieren -- aber nur, wenn der erste Punkt gueltig ist.
+            if not np.isnan(traj[0]).any():
+                ax.plot(traj[0, 0], traj[0, 1], "o", color=color, markersize=3)
+
+        ax.set_aspect("equal")
+        ax.set_xticks([])
+        ax.set_yticks([])
+        # Bild-/MediaPipe-y waechst nach UNTEN, matplotlib-y nach OBEN. Ohne diese
+        # Zeile stuenden die Buchstaben auf dem Kopf. invert_yaxis() bringt die
+        # Bahn in echte Bildkoordinaten, also aufrecht wie tatsaechlich gezeichnet.
+        ax.invert_yaxis()
+
+        # Schlechte Aufnahmen rot umranden und den Grund darunter schreiben.
+        if status != _STATUS_OK:
+            for seite in ax.spines.values():
+                seite.set_color("red")
+                seite.set_linewidth(2)
+            ax.set_xlabel(_STATUS_LABELS[status], color="red", fontsize=7)
+
+    # Uebrige leere Kacheln am Ende ausblenden.
+    for ax in axes[n:]:
+        ax.axis("off")
+
+    markiert = sum(1 for e in eintraege if e["status"] != _STATUS_OK)
+    fig.suptitle(f"{label} — {n} Aufnahmen ({markiert} markiert)")
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=120)
+    plt.close(fig)
+
+
+def replay_recordings(
+    recordings_dir: str | Path = "recordings",
+    output_dir: str | Path = "plots/gallery",
+    cols: int = 10,
+    finger_idx: int = 8,
+    min_length: int = 15,
+    max_jump: float = 0.15,
+) -> dict[str, dict]:
+    """
+    Statisches "Replay" der Rohaufnahmen als Kachel-Galerie.
+
+    Erfuellt das Kriterium *"Exploration und Replay der aufgenommenen
+    Rohdaten"*: Statt die Aufnahmen als Video abzuspielen, legen wir sie als
+    Bild-Galerie nebeneinander -- das ist reproduzierbar, teilbar (PNG) und
+    zeigt alle Beispiele gleichzeitig.
+
+    Pro Buchstabe wird EIN PNG unter ``output_dir`` erzeugt
+    (``gallery_<Buchstabe>.png``). Jede einzelne Aufnahme ist eine Kachel mit
+    ihrer (x, y)-Bahn. Schlechte Aufnahmen (zu kurz, Tracking-Sprung, keine
+    Hand) sind rot umrandet samt Grund -- so sieht man auf einen Blick, welche
+    Beispiele gut und welche problematisch sind. Damit sind gleich beide
+    optionalen Erweiterungen abgedeckt: *automatisches Filtern schlechter
+    Sequenzen* (Markierung) und *Kombination mit Visualisierung*.
+
+    Parameters
+    ----------
+    recordings_dir : str or Path
+        Verzeichnis mit den Rohaufnahmen (``recordings/<label>/*.pkl``).
+    output_dir : str or Path
+        Zielverzeichnis fuer die PNG-Galerien (wird angelegt, falls noetig).
+    cols : int
+        Anzahl Kacheln pro Zeile.
+    finger_idx, min_length, max_jump
+        Gleiche Parameter/Schwellen wie beim Training.
+
+    Returns
+    -------
+    dict[str, dict]
+        Pro Buchstabe eine Zusammenfassung
+        ``{"gesamt", "ok", "markiert", "pfad"}`` -- praktisch fuer eine
+        schnelle Qualitaets-Uebersicht im Terminal.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    galerie = _load_recordings_with_status(
+        recordings_dir, finger_idx=finger_idx, min_length=min_length, max_jump=max_jump
+    )
+    colors = _class_colors(sorted(galerie.keys()))
+
+    zusammenfassung: dict[str, dict] = {}
+    for label in sorted(galerie.keys()):
+        eintraege = galerie[label]
+        if not eintraege:
+            continue
+
+        pfad = output_dir / f"gallery_{label}.png"
+        _plot_letter_gallery(label, eintraege, colors[label], pfad, cols)
+
+        markiert = sum(1 for e in eintraege if e["status"] != _STATUS_OK)
+        zusammenfassung[label] = {
+            "gesamt": len(eintraege),
+            "ok": len(eintraege) - markiert,
+            "markiert": markiert,
+            "pfad": str(pfad),
+        }
+        logger.info(
+            "[%s] %d Aufnahmen, %d markiert -> %s",
+            label,
+            len(eintraege),
+            markiert,
+            pfad,
+        )
+
+    logger.info("Galerie gespeichert unter: %s", output_dir)
+    return zusammenfassung
