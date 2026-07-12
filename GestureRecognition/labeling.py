@@ -486,12 +486,60 @@ def _letter_range(start: str | None, end: str | None) -> list[str]:
     return [chr(c) for c in range(ord(s), ord(e) + 1)]
 
 
+def _parse_letters(raw: str) -> list[str]:
+    """
+    Wandelt eine freie Buchstaben-Eingabe in eine bereinigte Liste um.
+
+    Akzeptiert Kommas, Leerzeichen oder gar keine Trenner und ist
+    gross-/kleinschreibungsunabhaengig. Nur A-Z bleiben erhalten, Duplikate
+    werden entfernt, die Reihenfolge der ersten Nennung bleibt bestehen.
+
+    Beispiele
+    ---------
+    ``"Q,C,W,O,M"`` -> ``["Q", "C", "W", "O", "M"]``
+    ``"qcwom"``     -> ``["Q", "C", "W", "O", "M"]``
+    ``"q c w"``     -> ``["Q", "C", "W"]``
+    ``""``          -> ``[]``  (leer = Aufrufer entscheidet, z. B. ganzes A-Z)
+    """
+    seen: set[str] = set()   # merkt sich, welche Buchstaben schon drin sind (gegen Duplikate)
+    letters: list[str] = []  # das Ergebnis, in Reihenfolge der ersten Nennung
+    # Wir gehen die Eingabe Zeichen fuer Zeichen durch. ``raw.upper()`` macht aus
+    # einem 'q' ein 'Q', damit Gross-/Kleinschreibung egal ist.
+    for ch in raw.upper():
+        # Nur echte Buchstaben A-Z uebernehmen: Kommas, Leerzeichen und Zahlen
+        # fallen dadurch automatisch weg. Und jeden Buchstaben nur einmal.
+        if "A" <= ch <= "Z" and ch not in seen:
+            seen.add(ch)
+            letters.append(ch)
+    return letters
+
+
+def _format_letters(letters: list[str]) -> str:
+    """
+    Formatiert die Buchstabenliste kompakt fuer die Anzeige.
+
+    Ein zusammenhaengender Bereich (z. B. ``A,B,C,D``) wird als ``"A-D"``
+    gezeigt, eine freie Auswahl als Liste ``"Q, C, W, O, M"``.
+    """
+    # Ist die Liste eine luckenlose Kette (A,B,C,D)? Dann liest sich "A-D"
+    # schoener als "A, B, C, D". Zum Pruefen bauen wir mit range() die
+    # erwartete Kette vom ersten bis zum letzten Buchstaben und vergleichen.
+    # (Ab 3 Buchstaben lohnt sich die Kurzform; bei 1-2 zeigen wir sie normal.)
+    if len(letters) >= 3 and letters == [
+        chr(c) for c in range(ord(letters[0]), ord(letters[-1]) + 1)
+    ]:
+        return f"{letters[0]}-{letters[-1]}"
+    # Sonst (freie Auswahl wie Q,C,W,O,M) einfach mit Komma auflisten.
+    return ", ".join(letters)
+
+
 def collect_alphabet(
     person: str,
     times: int = 15,
     recordings_dir: str | Path = "recordings",
     start: str | None = None,
     end: str | None = None,
+    letters: list[str] | None = None,
 ):
     """
     Gefuehrter Aufnahme-Durchlauf: jeder Buchstabe A-Z mehrfach pro Person.
@@ -519,6 +567,14 @@ def collect_alphabet(
         Wie viele Takes pro Buchstabe diese Person aufnehmen soll (Standard: 15).
     recordings_dir : str or Path
         Zielverzeichnis mit den Label-Unterordnern (Standard: ``recordings``).
+    start, end : str, optional
+        Zusammenhaengender Buchstabenbereich (z. B. ``start="Q", end="T"``).
+        Wird ignoriert, wenn ``letters`` gesetzt ist.
+    letters : list of str, optional
+        Frei gewaehlte Buchstaben (z. B. ``["Q", "C", "W", "O", "M"]``). Hat
+        Vorrang vor ``start``/``end``. Wird normalisiert (Grossschreibung,
+        Duplikate entfernt); ungueltige Eintraege loesen einen ``ValueError`` aus.
+        Ist ``letters`` ``None``, wird der Bereich ``start``..``end`` genommen.
     """
     if times < 1:
         raise ValueError(f"times muss >= 1 sein, war {times}.")
@@ -535,13 +591,32 @@ def collect_alphabet(
     recordings_dir = Path(recordings_dir)
 
     # Welche Buchstaben werden in diesem Durchlauf aufgenommen?
-    letters = _letter_range(start, end)
+    # letters (freie Auswahl) hat Vorrang; sonst der Bereich start..end.
+    if letters is None:
+        letters = _letter_range(start, end)
+    else:
+        # Freie Auswahl: jeden Buchstaben normalisieren (Grossbuchstabe, keine
+        # Leerzeichen) und pruefen. So faengt die Funktion Fehleingaben ab, egal
+        # ob sie vom Menue oder direkt aus dem Code kommt.
+        cleaned: list[str] = []
+        seen: set[str] = set()  # gegen Duplikate
+        for ch in letters:
+            ch = str(ch).strip().upper()
+            # Erlaubt ist nur genau EIN Buchstabe A-Z pro Eintrag.
+            if len(ch) != 1 or not ("A" <= ch <= "Z"):
+                raise ValueError(f"Ungueltiger Buchstabe '{ch}': nur einzelne A-Z erlaubt.")
+            if ch not in seen:
+                seen.add(ch)
+                cleaned.append(ch)
+        if not cleaned:
+            raise ValueError("Die Buchstabenliste ist leer — bitte mindestens einen Buchstaben angeben.")
+        letters = cleaned
 
     # Kurze Anleitung ausgeben
     print("=" * 50)
     print(f"Alphabet-Aufnahme fuer: {person}")
     print(
-        f"Es werden die Buchstaben {letters[0]}-{letters[-1]} "
+        f"Es werden die Buchstaben {_format_letters(letters)} "
         f"({len(letters)} Stueck) je {times}x aufgenommen."
     )
     print("Bereits aufgenommene Takes werden uebersprungen.")
@@ -623,7 +698,7 @@ def collect_alphabet(
     print(f"Fertig. Neu gespeichert: {saved}, uebersprungen: {skipped}.")
     print(
         f"'{person}' hat jetzt {complete}/{len(letters)} Buchstaben "
-        f"aus {letters[0]}-{letters[-1]} vollstaendig ({times} Takes)."
+        f"aus {_format_letters(letters)} vollstaendig ({times} Takes)."
     )
     if complete < len(letters):
         print("Tipp: Skript erneut starten, um die fehlenden Takes zu ergaenzen.")
