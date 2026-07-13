@@ -29,7 +29,14 @@ preprocessor:
   # wenn die Hand nahezu steht oder aus dem Bild genommen wird (wie beim Training).
   min_speed_corner: 0.005    # Start: ab dieser Bewegung beginnt das Sammeln
   reset_speed_corner: 0.001  # Stopp: erst wenn die Hand fast steht, endet die Geste
-  buffer_size: 140
+  # stop_hold: So viele langsame Frames HINTEREINANDER muessen kommen, bevor die
+  # Geste als beendet gilt (Entprellen). Verhindert, dass ein kurzes Abbremsen an
+  # einer Ecke (z. B. bei M, W, Z) den Buchstaben mittendrin abschneidet.
+  stop_hold: 4
+  # buffer_size: Wie viele Fingerpunkte maximal gesammelt werden. Bei ~30 fps sind
+  # 250 Punkte ca. 8 Sekunden -- genug, damit auch ein gross/langsam gemalter
+  # Buchstabe komplett hineinpasst und der Anfang nicht abgeschnitten wird.
+  buffer_size: 250
   max_lost: 10
   min_steps: 15
 hiddenmarkov:

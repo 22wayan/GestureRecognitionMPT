@@ -125,13 +125,22 @@ class Preprocessor(Module):
         self.min_speed_corner = get_nested_key("config.preprocessor.min_speed_corner", data, 0.01)
         # reset_speed_corner is the threshold to stop collecting when movement slows down.
         self.reset_speed_corner = get_nested_key("config.preprocessor.reset_speed_corner", data, 0.005)
-        
+        # stop_hold: Wie viele langsame Frames HINTEREINANDER noetig sind, damit eine
+        # Geste als beendet gilt (sogenanntes "Entprellen"). Ein einzelner langsamer
+        # Frame -- etwa an der Ecke eines M oder Z, wo man kurz abbremst -- beendet die
+        # Geste dann NICHT mehr; nur ein echtes Anhalten ueber mehrere Frames tut das.
+        self.stop_hold = get_nested_key("config.preprocessor.stop_hold", data, 4)
+
         # Now, I create a deque to store the finger positions. It has a maximum length to keep only recent points.
         self.buffer = deque(maxlen=self.buffer_size)
         # lost_counter counts how many frames the hand has been lost.
         self.lost_counter = 0
         # is_moving indicates if the gesture is currently active based on hysteresis.
         self.is_moving = False
+        # slow_frames zaehlt, wie viele Frames der Finger schon am Stueck langsam ist.
+        # Es gehoert zum Entprellen der Stopp-Bedingung (siehe stop_hold): erst wenn
+        # dieser Zaehler stop_hold erreicht, gilt die Geste als beendet.
+        self.slow_frames = 0
         
         # Return an empty dict as required.
         return {}
@@ -211,21 +220,44 @@ class Preprocessor(Module):
                 # Calculate the speed as the norm of the difference.
                 diff = np.linalg.norm(self.buffer[-1] - self.buffer[-2])
                 if not self.is_moving and diff > self.min_speed_corner:
-                    # Start collecting if movement detected.
+                    # --- Gestenstart ---
                     self.is_moving = True
+                    self.slow_frames = 0
+                    # Puffer beim Start leeren: Alles davor (Hand ins Bild fuehren,
+                    # ruckeln, Reste der vorigen Geste) gehoert NICHT zum Buchstaben
+                    # und wuerde die Normalisierung verzerren (falscher Mittelpunkt,
+                    # falsche Groesse). Die letzten zwei Punkte behalten wir -- sie
+                    # sind schon Teil der Bewegung (aus ihnen wurde 'diff' berechnet)
+                    # und markieren den Startpunkt des Buchstabens.
+                    start_points = list(self.buffer)[-2:]
+                    self.buffer.clear()
+                    self.buffer.extend(start_points)
                 elif self.is_moving and diff < self.reset_speed_corner:
-                    # Stop collecting if movement slowed down.
-                    self.is_moving = False
-                    # Process the trajectory if enough points.
-                    if len(self.buffer) >= self.min_steps:
-                        trajectory = self.process_trajectory()
-                        # Puffer nach dem Emittieren leeren, damit die naechste
-                        # Geste sauber startet (ohne Reste der vorherigen).
-                        self.buffer.clear()
-                        return {self.outputSignal: trajectory}
-                    else:
-                        # Discard if not enough points.
-                        self.buffer.clear()
+                    # Finger ist langsam. Aber EIN langsamer Frame reicht nicht zum
+                    # Beenden: an den Ecken von M/W/Z bremst man kurz ab, ohne fertig
+                    # zu sein. Erst nach 'stop_hold' langsamen Frames am Stueck gilt
+                    # die Geste als beendet (Entprellen). So wird ein Buchstabe nicht
+                    # mehr an jeder Ecke in Stuecke zerhackt.
+                    self.slow_frames += 1
+                    if self.slow_frames >= self.stop_hold:
+                        # Stop collecting: Geste ist wirklich zu Ende.
+                        self.is_moving = False
+                        self.slow_frames = 0
+                        # Process the trajectory if enough points.
+                        if len(self.buffer) >= self.min_steps:
+                            trajectory = self.process_trajectory()
+                            # Puffer nach dem Emittieren leeren, damit die naechste
+                            # Geste sauber startet (ohne Reste der vorherigen).
+                            self.buffer.clear()
+                            return {self.outputSignal: trajectory}
+                        else:
+                            # Discard if not enough points.
+                            self.buffer.clear()
+                elif self.is_moving:
+                    # Finger bewegt sich wieder normal (schneller als die
+                    # Stopp-Schwelle) -> den Langsam-Zaehler zuruecksetzen, damit nur
+                    # AUFEINANDERFOLGENDE langsame Frames zaehlen.
+                    self.slow_frames = 0
             # While collecting, emit None.
             return {self.outputSignal: None}
         else:
@@ -234,6 +266,9 @@ class Preprocessor(Module):
             if self.lost_counter > self.max_lost and self.is_moving:
                 # End the gesture if lost too many frames.
                 self.is_moving = False
+                # Langsam-Zaehler zuruecksetzen -- die Geste endet hier ueber den
+                # Hand-Verlust, nicht ueber langsames Werden.
+                self.slow_frames = 0
                 if len(self.buffer) >= self.min_steps:
                     trajectory = self.process_trajectory()
                     # Puffer nach dem Emittieren leeren (wie oben), damit die
