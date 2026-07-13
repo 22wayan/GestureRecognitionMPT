@@ -1,283 +1,213 @@
-from __future__ import annotations
+"""
+Grid Search: die beste Anzahl verborgener HMM-Zustaende (``n_components``) finden.
 
-import csv
-import json
-from collections import Counter, defaultdict
-from pathlib import Path
+Idee in einem Satz
+------------------
+Statt die Zustandszahl zu raten, probieren wir mehrere Werte systematisch durch
+und messen fair, welcher am besten verallgemeinert.
 
-import matplotlib.pyplot as plt
+Die zwei Begriffe (fuer Einsteiger)
+-----------------------------------
+- **Grid Search**: mehrere Werte fuer einen Parameter der Reihe nach ausprobieren
+  und jeden messen. Hier ist der Parameter ``n_components`` -- also wie viele
+  "Bewegungsphasen" (verborgene Zustaende) jedes Buchstaben-Modell benutzen darf.
+- **Cross-Validation (CV)**: die faire Art zu messen. Der Datensatz wird in
+  ``n_splits`` gleich grosse Teile (Folds) zerlegt. Dann wird ``n_splits``-mal
+  trainiert: jedes Mal ist EIN Teil Test und der Rest Training, und jeder Teil
+  ist genau einmal der Test. Am Ende mittelt man die Genauigkeiten. So haengt das
+  Ergebnis nicht vom Zufall einer einzigen Aufteilung ab. Die Streuung ueber die
+  Folds verraet zusaetzlich, wie STABIL eine Konfiguration ist.
+
+Was diese Datei bewusst NICHT (mehr) tut
+----------------------------------------
+Frueher schrieb dieses Modul zusaetzlich CSV-/Markdown-/JSON-Reports und einen
+Plot und verglich auch ``diag`` gegen ``full``. Das wurde entfernt, um die Suche
+einfach und erklaerbar zu halten:
+
+- ``covariance_type="full"`` ist auf unseren Daten numerisch instabil (bricht bei
+  mehr Zustaenden ab) und kaum genauer -> wir bleiben bei ``"diag"``. Details und
+  Messwerte stehen in ``docs/grid-search.md``.
+- Die Ergebnisse werden einfach ZURUECKGEGEBEN (und koennen ausgedruckt werden),
+  statt in Dateien geschrieben. Das genuegt und ist leichter zu verstehen.
+"""
+
+from collections import defaultdict
+
 import numpy as np
 
 from GestureRecognition.hmmclassifier import HMMClassifier
 
 
-def _normalize_dataset(X, y=None):
-    if isinstance(X, dict):
-        if "sequences" in X and "labels" in X:
-            sequences = X["sequences"]
-            labels = X["labels"]
-        elif "X" in X and "y" in X:
-            sequences = X["X"]
-            labels = X["y"]
-        else:
-            sequences = []
-            labels = []
-            for label, label_sequences in X.items():
-                for sequence in label_sequences:
-                    sequences.append(sequence)
-                    labels.append(label)
-    else:
-        sequences = X
-        labels = y
+def _stratified_folds(labels, n_splits, random_state):
+    """
+    Teilt die Aufnahmen in ``n_splits`` Gruppen (Folds) fuer die Cross-Validation
+    -- und zwar STRATIFIZIERT: jede Gestenklasse ist in jedem Fold ungefaehr gleich
+    stark vertreten.
 
-    if labels is None:
-        raise ValueError("Fuer die Grid-Search werden Sequenzen und Labels benoetigt.")
+    Warum selbst gebaut (statt einer Bibliothek)? Weil die Logik einfach und gut
+    erklaerbar ist: Wir gehen Klasse fuer Klasse durch, mischen deren Aufnahmen und
+    verteilen sie reihum ("round-robin") auf die Folds. So bekommt jeder Fold von
+    jeder Klasse ungefaehr gleich viele Aufnahmen.
+    """
+    # Pro Klasse merken, welche Aufnahme-Positionen (Indizes) zu ihr gehoeren.
+    per_class = defaultdict(list)
+    for index, label in enumerate(labels):
+        per_class[label].append(index)
 
-    if len(sequences) != len(labels):
-        raise ValueError("Anzahl von Sequenzen und Labels passt nicht zusammen.")
+    # Nicht mehr Folds bilden, als die kleinste Klasse Aufnahmen hat -- sonst
+    # blieben Folds leer. Beispiel: kleinste Klasse hat 3 Aufnahmen -> max. 3 Folds.
+    smallest_class = min(len(indices) for indices in per_class.values())
+    n_splits = min(n_splits, smallest_class)
+    if n_splits < 2:
+        raise ValueError(
+            "Fuer Cross-Validation braucht jede Klasse mindestens 2 Aufnahmen."
+        )
 
-    return list(sequences), [str(label) for label in labels]
-
-
-def _make_stratified_folds(labels, n_splits=5, random_state=42):
-    label_counts = Counter(labels)
-    if len(label_counts) < 2:
-        raise ValueError("Fuer Cross-Validation werden mindestens zwei Klassen benoetigt.")
-
-    max_splits = min(label_counts.values())
-    if max_splits < 2:
-        raise ValueError("Jede Klasse braucht mindestens zwei Beispiele fuer CV.")
-
-    n_splits = min(n_splits, max_splits)
+    # Fester Zufalls-Generator -> gleicher Seed ergibt immer dieselben Folds
+    # (wichtig, damit alle getesteten Zustandszahlen auf DENSELBEN Aufteilungen
+    # verglichen werden -- nur so ist der Vergleich fair).
     rng = np.random.default_rng(random_state)
     folds = [[] for _ in range(n_splits)]
-    grouped_indices = defaultdict(list)
 
-    for index, label in enumerate(labels):
-        grouped_indices[label].append(index)
+    # Jede Klasse getrennt mischen und reihum auf die Folds verteilen.
+    for indices in per_class.values():
+        rng.shuffle(indices)
+        for position, sample_index in enumerate(indices):
+            folds[position % n_splits].append(sample_index)
 
-    for label_indices in grouped_indices.values():
-        rng.shuffle(label_indices)
-        for offset, sample_index in enumerate(label_indices):
-            folds[offset % n_splits].append(sample_index)
-
-    return [sorted(fold) for fold in folds]
+    return folds
 
 
-def _accuracy_score(y_true, y_pred):
+def _accuracy(y_true, y_pred):
+    """Anteil richtig vorhergesagter Gesten (0.0 bis 1.0)."""
     if not y_true:
         return 0.0
-    correct = sum(true_label == pred_label for true_label, pred_label in zip(y_true, y_pred))
-    return correct / len(y_true)
+    richtig = sum(wahr == geraten for wahr, geraten in zip(y_true, y_pred))
+    return richtig / len(y_true)
 
 
-def _stack_sequences(sequences):
-    lengths = [len(np.asarray(sequence)) for sequence in sequences]
-    X = np.vstack([np.asarray(sequence, dtype=float) for sequence in sequences])
+def _stack(sequences):
+    """
+    Haengt eine Liste von Sequenzen fuer den ``HMMClassifier`` aneinander.
+
+    Der Klassifikator erwartet alle Sequenzen in EINEM langen Array plus eine Liste
+    der Einzel-Laengen -- damit er weiss, wo eine Aufnahme aufhoert und die naechste
+    anfaengt.
+    """
+    lengths = [len(np.asarray(s)) for s in sequences]
+    X = np.vstack([np.asarray(s, dtype=float) for s in sequences])
     return X, lengths
 
 
-def _evaluate_configuration(
-    sequences,
-    labels,
-    n_components,
-    covariance_type,
-    n_splits=5,
-    random_state=42,
-):
-    folds = _make_stratified_folds(labels, n_splits=n_splits, random_state=random_state)
+def _cross_validate(sequences, labels, n_components, covariance_type, n_splits, random_state):
+    """
+    Bewertet EINE Konfiguration (eine feste Zustandszahl) per Cross-Validation.
+
+    Fuer jeden Fold: Fold = Test, Rest = Training. Es wird ein FRISCHER Klassifikator
+    trainiert und auf dem Test-Fold gemessen. Zurueck kommt die mittlere Genauigkeit
+    und ihre Streuung (wie stark die Fold-Ergebnisse schwanken).
+    """
+    folds = _stratified_folds(labels, n_splits, random_state)
     fold_accuracies = []
 
-    for fold_index, test_indices in enumerate(folds):
-        train_indices = [index for index in range(len(sequences)) if index not in test_indices]
+    for test_indices in folds:
+        test_set = set(test_indices)
+        train_indices = [i for i in range(len(sequences)) if i not in test_set]
 
-        train_sequences = [sequences[index] for index in train_indices]
-        train_labels = [labels[index] for index in train_indices]
-        test_sequences = [sequences[index] for index in test_indices]
-        test_labels = [labels[index] for index in test_indices]
+        # Trainings- und Test-Aufnahmen anhand der Indizes zusammenstellen.
+        X_train, len_train = _stack([sequences[i] for i in train_indices])
+        y_train = [labels[i] for i in train_indices]
+        X_test, len_test = _stack([sequences[i] for i in test_indices])
+        y_test = [labels[i] for i in test_indices]
 
-        classifier = HMMClassifier(
+        # Frischen Klassifikator mit dieser Zustandszahl trainieren und testen.
+        clf = HMMClassifier(
             n_components=n_components,
             covariance_type=covariance_type,
-            random_state=random_state + fold_index,
+            random_state=random_state,
         )
+        clf.fit(X_train, y_train, len_train)
+        y_pred = clf.predict(X_test, len_test)
+        fold_accuracies.append(_accuracy(y_test, y_pred))
 
-        X_train, train_lengths = _stack_sequences(train_sequences)
-        X_test, test_lengths = _stack_sequences(test_sequences)
-
-        classifier.fit(X_train, train_labels, train_lengths)
-        predictions = classifier.predict(X_test, test_lengths)
-        fold_accuracies.append(_accuracy_score(test_labels, predictions))
-
+    fold_accuracies = np.array(fold_accuracies)
     return {
         "n_components": int(n_components),
-        "covariance_type": covariance_type,
-        "mean_accuracy": float(np.mean(fold_accuracies)),
-        "std_accuracy": float(np.std(fold_accuracies)),
-        "fold_accuracies": [float(value) for value in fold_accuracies],
+        "mean_accuracy": float(fold_accuracies.mean()),   # Durchschnitt ueber die Folds
+        "std_accuracy": float(fold_accuracies.std()),     # Streuung = wie stabil
+        "fold_accuracies": [round(float(a), 4) for a in fold_accuracies],
     }
-
-
-def _write_csv(rows, path):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    with path.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
-        writer.writerow(
-            ["n_components", "covariance_type", "mean_accuracy", "std_accuracy", "fold_accuracies"]
-        )
-        for row in rows:
-            writer.writerow(
-                [
-                    row["n_components"],
-                    row["covariance_type"],
-                    f'{row["mean_accuracy"]:.4f}',
-                    f'{row["std_accuracy"]:.4f}',
-                    ", ".join(f"{value:.4f}" for value in row["fold_accuracies"]),
-                ]
-            )
-
-
-def _write_markdown_report(rows, best_row, path):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    lines = [
-        "# HMM Modellvergleich",
-        "",
-        "## Warum Cross-Validation?",
-        "",
-        "Cross-Validation ist robuster als ein einzelner Train/Test-Split,",
-        "weil jede Aufnahme einmal als Testdaten benutzt wird.",
-        "Dadurch haengt das Ergebnis weniger vom Zufall einer einzigen Aufteilung ab.",
-        "",
-        "## Trade-offs bei n_components",
-        "",
-        "- Wenige Zustaende: einfacher, stabiler, aber oft grober.",
-        "- Viele Zustaende: flexibler, aber leichteres Overfitting.",
-        "- Deshalb wird hier systematisch ueber mehrere Werte verglichen.",
-        "",
-        "## Ergebnisse",
-        "",
-        "| n_components | covariance_type | mean_accuracy | std_accuracy |",
-        "| --- | --- | --- | --- |",
-    ]
-
-    for row in rows:
-        lines.append(
-            f'| {row["n_components"]} | {row["covariance_type"]} | '
-            f'{row["mean_accuracy"]:.4f} | {row["std_accuracy"]:.4f} |'
-        )
-
-    lines.extend(
-        [
-            "",
-            "## Finale Wahl",
-            "",
-            f'- Gewaehlt wurde `n_components={best_row["n_components"]}` mit '
-            f'`covariance_type={best_row["covariance_type"]}`.',
-            f'- Die mittlere Accuracy liegt bei `{best_row["mean_accuracy"]:.4f}`.',
-            f'- Die Wahl ist einfach begruendet: beste mittlere Accuracy, '
-            "bei gleicher Score-Hoehe waere die kleinere Standardabweichung besser.",
-        ]
-    )
-
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def _save_best_config(best_row, path):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    config = {
-        "n_components": best_row["n_components"],
-        "covariance_type": best_row["covariance_type"],
-        "mean_accuracy": best_row["mean_accuracy"],
-        "std_accuracy": best_row["std_accuracy"],
-    }
-    path.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
 
 def grid_search_n_components(
-    X,
-    y=None,
-    n_components_values=(2, 3, 4, 5, 6),
+    sequences,
+    labels,
+    n_components_values=(4, 6, 8, 10, 12),
     covariance_type="diag",
     n_splits=5,
     random_state=42,
-    plot_path="plots/grid_search.png",
-    csv_path="reports/grid_search_n_components.csv",
-    best_config_path="reports/hmm_best_config.json",
 ):
-    sequences, labels = _normalize_dataset(X, y)
-    results = []
+    """
+    Probiert mehrere Zustandszahlen durch und findet die beste (Grid Search).
 
-    for n_components in n_components_values:
-        results.append(
-            _evaluate_configuration(
-                sequences=sequences,
-                labels=labels,
-                n_components=n_components,
-                covariance_type=covariance_type,
-                n_splits=n_splits,
-                random_state=random_state,
-            )
-        )
+    Fuer jeden Wert in ``n_components_values`` wird per Cross-Validation die mittlere
+    Genauigkeit gemessen. Zurueck kommen alle Ergebnisse und die beste Konfiguration.
 
-    results.sort(key=lambda row: row["n_components"])
-    best_row = max(results, key=lambda row: (row["mean_accuracy"], -row["std_accuracy"]))
+    Parameters
+    ----------
+    sequences : list of ndarray
+        Die Aufnahmen als ``(N, 3)``-Arrays (x, y, velocity), gleiche Reihenfolge
+        wie ``labels``.
+    labels : list of str
+        Das Klassenlabel je Aufnahme.
+    n_components_values : tuple of int
+        Die zu testenden Zustandszahlen. Der Standard ``(4, 6, 8, 10, 12)`` deckt
+        den ganzen Bereich ab: von "zu grob" (4) ueber den Sweet Spot bis
+        "Overfitting" (12).
+    covariance_type : str
+        Form der Kovarianzmatrix. Standard ``"diag"`` (stabil). ``"full"`` ist
+        numerisch instabil, siehe ``docs/grid-search.md``.
+    n_splits : int
+        Anzahl der Cross-Validation-Folds (Standard 5).
+    random_state : int
+        Zufalls-Seed fuer reproduzierbare Folds und Modelle.
 
-    plot_path = Path(plot_path)
-    plot_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.figure(figsize=(8, 4.5))
-    x_values = [row["n_components"] for row in results]
-    y_values = [row["mean_accuracy"] for row in results]
-    y_errors = [row["std_accuracy"] for row in results]
-    plt.errorbar(x_values, y_values, yerr=y_errors, marker="o", capsize=4)
-    plt.xlabel("n_components")
-    plt.ylabel("CV-Accuracy")
-    plt.title("Grid Search fuer n_components")
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(plot_path)
-    plt.close()
+    Returns
+    -------
+    (results, best) : tuple
+        ``results`` -- Liste je getesteter Zustandszahl (nach ``n_components``
+        sortiert), jeweils mit ``mean_accuracy``, ``std_accuracy`` und den
+        einzelnen ``fold_accuracies``.
+        ``best`` -- der Eintrag mit der hoechsten mittleren Genauigkeit (bei
+        Gleichstand entscheidet die kleinere Streuung).
 
-    _write_csv(results, csv_path)
-    _save_best_config(best_row, best_config_path)
-    return results, best_row
+    Beispiel
+    --------
+    >>> results, best = grid_search_n_components(sequences, labels)
+    >>> best["n_components"], round(best["mean_accuracy"], 3)
+    (10, 0.908)
+    """
+    # NaN-Sicherung: Der HMM-Fit crasht bei nicht-endlichen Werten. Aufnahmen mit
+    # NaN/inf hier ueberspringen. (Der Trainingspfad dataset_building filtert das
+    # schon; bei direktem Aufruf mit clean_recordings-Daten kann aber NaN vorkommen.)
+    sauber = [
+        (s, l)
+        for s, l in zip(sequences, labels)
+        if np.isfinite(np.asarray(s, dtype=float)).all()
+    ]
+    sequences = [s for s, _ in sauber]
+    labels = [l for _, l in sauber]
 
+    # Jede Zustandszahl per Cross-Validation bewerten.
+    results = [
+        _cross_validate(sequences, labels, n, covariance_type, n_splits, random_state)
+        for n in n_components_values
+    ]
 
-def compare_configurations(
-    X,
-    y=None,
-    covariance_types=("diag", "full"),
-    n_components_values=(2, 3, 4, 5, 6),
-    n_splits=5,
-    random_state=42,
-    csv_path="reports/hmm_configuration_results.csv",
-    markdown_path="reports/hmm_configuration_report.md",
-    best_config_path="reports/hmm_best_config.json",
-):
-    sequences, labels = _normalize_dataset(X, y)
-    results = []
+    # Nach Zustandszahl sortieren (fuer eine lesbare Tabelle).
+    results.sort(key=lambda r: r["n_components"])
 
-    for covariance_type in covariance_types:
-        for n_components in n_components_values:
-            results.append(
-                _evaluate_configuration(
-                    sequences=sequences,
-                    labels=labels,
-                    n_components=n_components,
-                    covariance_type=covariance_type,
-                    n_splits=n_splits,
-                    random_state=random_state,
-                )
-            )
-
-    results.sort(key=lambda row: (-row["mean_accuracy"], row["std_accuracy"], row["n_components"]))
-    best_row = results[0]
-
-    _write_csv(results, csv_path)
-    _write_markdown_report(results, best_row, markdown_path)
-    _save_best_config(best_row, best_config_path)
-    return results, best_row
+    # Beste Konfiguration: hoechste mittlere Genauigkeit; bei Gleichstand die
+    # kleinere Streuung (stabiler ist besser).
+    best = max(results, key=lambda r: (r["mean_accuracy"], -r["std_accuracy"]))
+    return results, best
