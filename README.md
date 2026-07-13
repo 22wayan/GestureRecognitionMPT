@@ -15,6 +15,29 @@ Die Verarbeitung erfolgt über mehrere Module:
 - **TrailMarker**
   Optionales Modul zur Visualisierung der Fingerbewegung.
 
+Der Weg eines Buchstabens: **Webcam → HandDetector (21 Hand-Punkte) →
+Preprocessor (Fingerspur sammeln + normalisieren) → HMMModule (Buchstabe
+raten) → Anzeige.**
+
+### Wo finde ich was?
+
+| Datei | Zweck |
+|---|---|
+| `main.py` | Startet die Pipeline (live, record oder replay) |
+| `GestureRecognition/modules/` | Die vier Pipeline-Module (siehe oben) |
+| `GestureRecognition/labeling.py` | Aufnahmen laden, Features bauen, Datensatz erstellen |
+| `GestureRecognition/hmmclassifier.py` | Der HMM-Klassifikator (fit / predict) |
+| `GestureRecognition/visualization.py` | Datensatz-Plots + Modell-Bewertung (Accuracy, Confusion Matrix) |
+| `collect_alphabet.py` | Geführte Aufnahme A–Z (Trainingsdaten sammeln) |
+| `schnell_aufnahme.py` | Schnelle Aufnahme in einem Fenster, auch **eigene neue Symbole** |
+| `review_recordings.py` | Aufnahmen prüfen und schlechte aussortieren |
+| `build_dataset.py` / `train.py` | Datensatz bauen / Modell trainieren (`data/hmm.pkl`) |
+| `visualize.py` | Alle Plots + Metriken mit einem Befehl |
+| `demo_gif.py` | Demo-GIFs der Klassifikation erzeugen (siehe unten) |
+| `recordings/` | Alle Trainings-Aufnahmen (`<Buchstabe>/<Buchstabe>-<person>-<n>.pkl`) |
+| `config.yml` | Einstellungen (Kamera, Schwellenwerte — mit Kommentaren) |
+| `docs/` | Detail-Doku ([Ergebnisse](docs/ergebnisse.md), [Grid-Search](docs/grid-search.md), [Designentscheidungen](docs/design-entscheidungen.md), [Live-Modus](docs/live-modus.md)) |
+
 <table>
 <tr>
 <td><img src="https://github.com/user-attachments/assets/f954735c-e8cb-4a82-9c38-4c748eb90dd4" width="250"></td>
@@ -49,18 +72,11 @@ Kurz checken ob alles da ist:
 python -c "import mediapipe, hmmlearn, numpy, cv2; print('OK')"
 ```
 
-### 3. Recordings runterladen
-```bash
-curl -LO https://github.com/jaboll-ai/GestureRecognitionMPT/releases/download/recordings-v1/recordings.zip
-unzip recordings.zip
-```
+> Die Trainings-Aufnahmen (`recordings/`) und das MediaPipe-Modell
+> (`hand_landmarker.task`) liegen bereits im Repo — es muss nichts extra
+> heruntergeladen werden.
 
-### 4. MediaPipe-Modell runterladen
-```bash
-curl -LO https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task
-```
-
-### 5. Webcam-Index einstellen
+### 3. Webcam-Index einstellen
 In `config.yml` den `deviceIndex` anpassen. Welcher Index passt, einfach testen:
 ```bash
 python -c "
@@ -74,13 +90,29 @@ for i in range(5):
 ```
 Den ersten Index der `OK` ausgibt in der `config.yml` eintragen.
 
-### 6. Replay-Modus testen
+### 4. Replay-Modus testen
 Auf macOS vorher den Qt-Pfad setzen, sonst crasht es:
 ```bash
 export QT_QPA_PLATFORM_PLUGIN_PATH=$(python -c "import PyQt5, os; print(os.path.join(os.path.dirname(PyQt5.__file__), 'Qt5', 'plugins', 'platforms'))")
 python main.py --mode replay --recorder.file recordings/A/A-1773050612.172112.pkl
 ```
 Wenn ein Fenster mit bunten Punkten aufgeht, hat alles geklappt. Mit `Q` beenden.
+
+### 5. Modell trainieren
+```bash
+python train.py
+```
+Baut den Datensatz aus `recordings/`, trainiert die 26 HMMs und speichert das
+Modell unter `data/hmm.pkl` (dauert ca. 1–2 Minuten, Test-Accuracy wird am
+Ende angezeigt).
+
+### 6. Live-Erkennung starten
+```bash
+python main.py
+```
+Hand vor die Kamera, mit dem **Zeigefinger** einen Buchstaben in die Luft
+malen, Hand kurz still halten (oder aus dem Bild nehmen) — der erkannte
+Buchstabe erscheint im Bild. Details und Tipps: [docs/live-modus.md](docs/live-modus.md).
 
 ### 7. Doku bauen (optional)
 ```bash
@@ -217,6 +249,30 @@ python -c "from GestureRecognition.labeling import dataset_building; dataset_bui
 
 Details dazu im nächsten Abschnitt.
 
+## Eigene neue Symbole aufnehmen (nicht nur A–Z)
+
+Das System ist **nicht auf Buchstaben festgelegt** — jede Klasse ist einfach
+ein Ordnername unter `recordings/`. Mit `schnell_aufnahme.py` lassen sich
+beliebige neue Symbole aufnehmen und sofort mittrainieren:
+
+```bash
+# 1) Neues Symbol aufnehmen (z. B. 10 Takes fuer "STERN"):
+python schnell_aufnahme.py deinname --symbols STERN --times 10
+#    mehrere auf einmal geht auch:
+python schnell_aufnahme.py deinname --symbols STERN,HERZ,BLITZ --times 10
+
+# 2) Modell neu trainieren -- nimmt die neue Klasse automatisch mit:
+python train.py
+
+# 3) Live testen:
+python main.py
+```
+
+Bedienung im Aufnahme-Fenster: **Leertaste** = Aufnahme starten, nochmal
+**Leertaste** = speichern, `R` = verwerfen, **Backspace** = letzten Take
+löschen, `Q` = beenden. Die gemalte Spur bleibt sichtbar stehen. Ohne
+`--symbols` nimmt das Skript ganz normal das Alphabet A–Z auf.
+
 ## Trainingsdatensatz bauen
 
 Mit `dataset_building(output_path)` in `GestureRecognition/labeling.py` wird
@@ -324,21 +380,98 @@ Entfernen einzelner Ausreißer-Sequenzen.
 ## Ergebnisse
 
 Wie gut erkennt das trainierte Modell die Buchstaben-Gesten? Gemessen mit
-`evaluate_classifier()` auf dem eigenen A–Z-Datensatz:
+`evaluate_classifier()` auf dem A–Z-Datensatz (4 Personen + alte Aufnahmen,
+je 15+ Takes pro Buchstabe und Person):
 
 | Test | Bedeutung | Accuracy |
 |---|---|---|
-| **Standard** | bekannte Personen, neue Aufnahmen | **~79 %** |
-| **Neue Person** | eine Person komplett aus dem Training rausgehalten | **~36 %** |
+| **Standard** | bekannte Personen, neue Aufnahmen | **~90 %** |
+| **Neue Person** | eine Person komplett aus dem Training rausgehalten | **~60 %** |
 
-Die zweite Zahl ist die ehrliche Erwartung für die Prüfung, in der der Prüfer
-live als **völlig neue Person** Gesten aufnimmt.
+Die zweite Zahl ist die ehrliche Erwartung für eine **völlig neue Person**,
+deren Aufnahmen das Modell nie gesehen hat (je nach Person 58–77 %). Nimmt
+die neue Person dagegen erst ein paar eigene Aufnahmen auf und trainiert
+mit (`schnell_aufnahme.py` + `python train.py`), gilt die erste Zahl.
+
+Der große Sprung von früher ~79 %/36 % auf ~90 %/60 % kam durch drei Dinge:
+Resampling auf feste Gestenlänge, `min_covar` gegen den HMM-Kollaps und
+deutlich mehr Trainingsdaten (vier Personen statt einer) — Details in
+[docs/design-entscheidungen.md](docs/design-entscheidungen.md).
 
 <img src="docs/source/_static/confusion_matrix.png" width="520">
 
 Die Confusion Matrix zeigt, **welche** Buchstaben verwechselt werden (Zeile =
 wirklich gemacht, Spalte = vom Modell geraten, Diagonale = richtig). Verwechselt
-werden vor allem Buchstaben mit ähnlicher Bewegung (z. B. P↔F, N↔P, E↔S).
+werden vor allem Buchstaben mit ähnlicher Bewegung.
 
 ➡️ Ausführliche Erklärung, Interpretation und Reproduktions-Anleitung:
-**[docs/ergebnisse.md](docs/ergebnisse.md)**
+**[docs/ergebnisse.md](docs/ergebnisse.md)** ·
+Grid-Search-Resultate: **[docs/grid-search.md](docs/grid-search.md)**
+
+## Demo
+
+So sieht die Klassifikation in Aktion aus — echte Aufnahmen aus
+`recordings/`, abgespielt durch dieselbe Pipeline wie im Live-Modus
+(grün = Hand-Punkte, orange = Spur der Zeigefingerspitze, am Ende die
+Vorhersage des Modells):
+
+<table>
+<tr>
+<td><img src="images/demo_A.gif" width="260"></td>
+<td><img src="images/demo_M.gif" width="260"></td>
+<td><img src="images/demo_W.gif" width="260"></td>
+</tr>
+</table>
+
+Selbst erzeugen (nach `python train.py`):
+
+```bash
+python demo_gif.py                  # Standard: A, M, W
+python demo_gif.py --letters B,X,Z  # eigene Auswahl
+```
+
+## Designentscheidungen
+
+Alle wichtigen Entscheidungen (Features, Resampling, HMM-Hyperparameter,
+Live-Schwellenwerte) sind mit Begründung an einem Ort gesammelt:
+**[docs/design-entscheidungen.md](docs/design-entscheidungen.md)**.
+Die Kurzfassung:
+
+- **Features:** (x, y, Geschwindigkeit) der Zeigefingerspitze — eine
+  gemeinsame Funktion (`_to_features`) für Training **und** Live.
+- **Resampling:** jede Geste wird auf 48 Punkte gebracht → Zeichentempo egal.
+- **HMM:** ein GaussianHMM pro Buchstabe, `n_components=10` (per
+  Grid-Search belegt), `covariance_type=diag`, `min_covar=0.03` gegen
+  Varianz-Kollaps.
+- **Live:** Hysterese-Segmentierung mit Entprellen (`stop_hold`), unsichere
+  Vorhersagen werden als `?` angezeigt (Score- und Margin-Schwelle).
+
+## Limitations und mögliche Erweiterungen
+
+Was das System (noch) nicht gut kann — und was man daraus machen könnte:
+
+- **Neue Personen:** ~60 % Accuracy ohne eigene Trainingsdaten. Jede Person
+  malt anders; mit ein paar eigenen Aufnahmen (`schnell_aufnahme.py` +
+  `train.py`) steigt die Erkennung auf ~90 %. *Erweiterung:* mehr Personen
+  im Trainingsdatensatz.
+- **Ähnliche Bewegungen:** Buchstaben, deren Spur fast gleich aussieht
+  (z. B. V/W, P/F), bleiben die häufigsten Verwechslungen. *Erweiterung:*
+  zusätzliche Features (z. B. Richtungswinkel) oder gezielt mehr Aufnahmen
+  für diese Paare.
+- **Ein Finger, eine Hand:** Es wird nur die Zeigefingerspitze einer Hand
+  verfolgt — Handform oder zwei Hände spielen keine Rolle. *Erweiterung:*
+  mehrere Landmarks als Features (statische Gesten würden möglich).
+- **Segmentierung braucht eine Pause:** Eine Geste endet erst, wenn die
+  Hand kurz still steht oder das Bild verlässt. Flüssiges „Schreiben"
+  mehrerer Buchstaben hintereinander funktioniert nicht. *Erweiterung:*
+  kontinuierliche Segmentierung (Sliding Window).
+- **Aufnahmebedingungen:** MediaPipe braucht ordentliches Licht und die
+  ganze Hand im Bild, sonst reißt das Tracking ab (solche Aufnahmen werden
+  aussortiert, kosten aber Daten).
+- **Klassisches Modell:** HMMs sind klein, schnell und erklärbar — ein
+  LSTM/Transformer könnte mehr Genauigkeit holen, bräuchte aber deutlich
+  mehr Daten. Für den Umfang dieses Projekts ist das HMM die passende Wahl.
+
+**Nicht auf Buchstaben beschränkt:** Neue Symbole lassen sich in Minuten
+ergänzen — aufnehmen, trainieren, fertig (siehe
+[Eigene neue Symbole aufnehmen](#eigene-neue-symbole-aufnehmen-nicht-nur-az)).
