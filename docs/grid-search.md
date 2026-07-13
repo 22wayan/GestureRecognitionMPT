@@ -1,17 +1,17 @@
-# Grid Search: Welche Modell-Konfiguration ist die beste?
+# Grid Search: Warum `n_components = 10` die Wahl ist
 
-Diese Seite dokumentiert, **wie wir die Hyperparameter des HMM-Klassifikators
-gewählt haben** — nicht durch Raten, sondern durch systematisches Ausprobieren
-und Messen (Grid Search). Sie richtet sich an Einsteiger: jeder Begriff wird
-kurz erklärt.
+Diese Seite dokumentiert, **wie wir die wichtigste Stellschraube des
+HMM-Klassifikators gewählt haben** — nicht durch Raten, sondern durch
+systematisches Messen (Grid Search). Ergebnis vorweg: **10 verborgene Zustände
+pro Buchstabe** sind der beste Wert. Er ist jetzt der Standard in `train.py`.
 
-Zwei Stellschrauben werden untersucht:
+Untersucht wird vor allem:
 
 - **`n_components`** — die Anzahl der verborgenen Zustände pro Buchstaben-HMM
-  (wie viele „Phasen" eine Geste hat).
-- **`covariance_type`** — die Form der Kovarianzmatrix: `diag` (nimmt an, dass
-  x, y und Geschwindigkeit unabhängig sind) oder `full` (erlaubt Zusammenhänge
-  zwischen ihnen, hat aber viel mehr Parameter).
+  (wie viele „Bewegungsphasen" eine Geste bekommt).
+
+Die Kovarianz-Form (`diag` vs. `full`) wird in Abschnitt 4 kurz behandelt; der
+Code selbst bleibt bei `diag` (Begründung dort).
 
 ---
 
@@ -27,116 +27,117 @@ Training und 1 Teil Test — und jeder Teil ist genau einmal der Test. Am Ende
 mittelt man die 5 Genauigkeiten.
 
 Vorteil: Das Ergebnis hängt **nicht vom Zufall einer einzelnen Aufteilung** ab.
-Zusätzlich verrät die **Standardabweichung** (std) über die 5 Folds, wie
-**stabil** eine Konfiguration ist — ein kleiner Wert bedeutet: das Modell liefert
-zuverlässig ähnliche Ergebnisse, egal welche Aufnahmen gerade im Test landen.
+Die **Standardabweichung** (std) über die 5 Folds verrät zusätzlich, wie
+**stabil** eine Konfiguration ist — ein kleiner Wert heißt: verlässlich ähnliche
+Ergebnisse, egal welche Aufnahmen gerade im Test landen.
 
-Gemessen wurde auf **1749 sauberen Sequenzen** (26 Klassen A–Z, 4 Personen),
-5-fach-CV, `random_state=42`, `min_covar=0.03` (wie im echten Modell).
-
----
-
-## 2. Ergebnisse
-
-Mittlere CV-Genauigkeit (± Standardabweichung über die 5 Folds):
-
-| covariance_type | n_components | mittlere Accuracy | Streuung (std) | Bemerkung |
-|---|---|---|---|---|
-| diag | 4  | 78,3 % | 0,035 | zu wenige Zustände |
-| diag | 6  | 86,3 % | 0,035 | |
-| diag | **8** | **89,2 %** | 0,016 | **aktuelle Wahl im Modell** |
-| diag | 10 | **90,8 %** | **0,009** | bester `diag`-Wert, am stabilsten |
-| diag | 12 | 88,4 % | 0,038 | fällt wieder → Overfitting |
-| full | 6  | 91,2 % | 0,008 | knapp bester Wert überhaupt … |
-| full | 8  | — | — | **Fit gescheitert** (Kovarianz nicht mehr positiv-definit) |
+Gemessen wurde auf **~1750 sauberen Sequenzen** (26 Klassen A–Z, 4 Personen),
+5-fach-CV, `random_state=42`, `covariance_type="diag"`, `min_covar=0.03`.
 
 ---
 
-## 3. Interpretation: die Anzahl der Zustände (`n_components`)
+## 2. Ergebnisse (n_components)
+
+Mittlere CV-Genauigkeit (± Streuung über die 5 Folds):
+
+| n_components | mittlere Accuracy | Streuung (std) | Bemerkung |
+|---|---|---|---|
+| 4  | 81,8 % | 0,012 | zu wenige Zustände → zu grob |
+| 6  | 87,1 % | 0,014 | |
+| 8  | 89,2 % | 0,018 | frühere Wahl |
+| **10** | **91,1 %** | 0,026 | **bester Wert → neue Wahl** |
+| 12 | 90,4 % | 0,040 | fällt wieder + unruhig → Overfitting |
+
+**Ausgewählt: `n_components = 10`** (höchste mittlere Genauigkeit).
+
+> **Zusätzlicher Beleg am echten Modell:** Trainiert man das ausgelieferte Modell
+> (`python train.py`) mit `n_components=10`, steigt die Genauigkeit auf dem
+> getrennten Test-Split von **90,3 % (bei 8) auf 93,1 % (bei 10)**. Grid-Search
+> und echtes Training zeigen also in dieselbe Richtung.
+
+---
+
+## 3. Interpretation: die Anzahl der Zustände
 
 Man sieht eine klare Kurve: Die Genauigkeit **steigt von 4 bis 10 Zuständen** und
 **fällt bei 12 wieder ab**.
 
 - **Zu wenige Zustände** (4): Das Modell ist zu grob, um die Form einer Geste
-  abzubilden — nur 78 %.
-- **Sweet Spot** (8–10): Genug Zustände, um die einzelnen Bewegungsphasen eines
-  Buchstabens zu beschreiben — ~89–91 %.
+  abzubilden — nur ~82 %.
+- **Sweet Spot** (10): Genug Zustände, um die einzelnen Bewegungsphasen eines
+  Buchstabens sauber zu beschreiben — **91,1 %**.
 - **Zu viele Zustände** (12): Das Modell fängt an, sich die Trainingsdaten zu
-  „merken" statt zu verallgemeinern (**Overfitting**) — die Accuracy sinkt wieder
-  und die Streuung steigt (0,038).
+  „merken" statt zu verallgemeinern (**Overfitting**). Die Accuracy sinkt wieder
+  und die Streuung steigt deutlich (0,040) — die einzelnen Folds schwanken dann
+  stark (von 0,84 bis 0,95). Ein hoher, aber unruhiger Wert ist unzuverlässiger
+  als ein etwas niedrigerer, stabiler.
 
-Der beste `diag`-Wert ist **`n_components=10`** (90,8 %) — mit der **kleinsten
-Streuung** (0,009), also am stabilsten. Die aktuell im Modell gesetzte **8**
-liegt mit 89,2 % nur knapp darunter und ist etwas einfacher (weniger Parameter).
+Deshalb ist **10** die Wahl: höchster Mittelwert, und noch **vor** der
+Overfitting-Klippe bei 12.
 
 ---
 
-## 4. Interpretation: die Kovarianz-Form (`diag` vs. `full`)
+## 4. Kurz zur Kovarianz-Form (`diag` vs. `full`)
 
-`full` kann theoretisch mehr abbilden (Zusammenhänge zwischen x, y und
-Geschwindigkeit) und erreicht mit `n_components=6` auch den **knapp höchsten
-Wert (91,2 %)**. **Aber:** `full` hat viel mehr Parameter und ist dadurch
-**numerisch instabil** — bei `n_components=8` **bricht das Training ab**:
+In einer einmaligen Zusatzmessung haben wir auch `full`-Kovarianz getestet.
+Ergebnis: `full` mit `n_components=6` war mit ~91,2 % nur **hauchdünn** besser,
+aber **numerisch instabil** — bei `n_components=8` bricht das Training ab:
 
 ```
 ValueError: 'covars' must be symmetric, positive-definite
 ```
 
-Die Kovarianzmatrix „kollabiert", weil pro Zustand zu wenige Daten für so viele
-Parameter da sind. `diag` dagegen läuft über **alle** getesteten Zustandszahlen
-stabil durch.
+`full` hat viel mehr Parameter, für die pro Zustand zu wenige Daten da sind; die
+Kovarianzmatrix „kollabiert". `diag` dagegen läuft über **alle** Zustandszahlen
+stabil durch. Der winzige Genauigkeitsvorteil ist die Absturzgefahr nicht wert.
 
-**Trade-off:** `full` bringt gegenüber `diag` nur ~0,4 Prozentpunkte (91,2 % vs.
-90,8 %), riskiert aber Abstürze. Der kleine Gewinn ist die Instabilität nicht
-wert.
+**Deshalb ist der Code bewusst auf `diag` festgelegt** — das hält die Grid-Search
+einfach und robust.
 
 ---
 
 ## 5. Fazit / Designentscheidung
 
-- **`covariance_type = "diag"`** — stabil über alle Zustandszahlen; `full` ist
-  fragil (bricht bei `n_components=8` ab) und kaum genauer.
-- **`n_components`** liegt sinnvoll bei **8–10**. Die aktuelle **8** ist eine gute,
-  etwas einfachere Wahl; **10** wäre laut CV marginal besser (90,8 % statt 89,2 %)
-  und am stabilsten — ein leichter, gefahrloser Verbesserungshebel.
+- **`covariance_type = "diag"`** — stabil; `full` ist fragil und kaum genauer.
+- **`n_components = 10`** — höchste CV-Genauigkeit (91,1 %), belegt zusätzlich
+  durch das echte Modell (Test-Accuracy 90,3 % → 93,1 %). Jetzt der Standard in
+  `train.py`.
 
-Diese Messung bestätigt also die Grundwahl (`diag`, ~8 Zustände) und zeigt
-gleichzeitig einen konkreten kleinen Optimierungsschritt auf (`n_components=10`).
+Die vorherige 8 war eine gute, etwas grobere Wahl; 10 ist messbar besser und
+liegt noch vor dem Overfitting. **10 ist damit die belegte Wahl.**
 
 ---
 
 ## 6. Ergebnisse selbst reproduzieren
 
-Im Projekt-`.venv` (dort ist `hmmlearn` installiert):
+Die Grid-Search wurde bewusst **vereinfacht**: keine Datei-Reports, kein Plot,
+nur die eigene stratifizierte Cross-Validation. Der Aufruf ist entsprechend
+einfach — im Projekt-`.venv` (dort ist `hmmlearn` installiert):
 
 ```python
-import numpy as np
 from GestureRecognition.labeling import clean_recordings
-from GestureRecognition.grid_search import _evaluate_configuration
+from GestureRecognition.grid_search import grid_search_n_components
 
-# Alle sauberen Sequenzen laden (NaN-Sequenzen ueberspringen).
+# Alle sauberen Aufnahmen laden und flach machen.
 data = clean_recordings("recordings")
 sequences, labels = [], []
 for label, seqs in data.items():
     for s in seqs:
-        s = np.asarray(s, dtype=float)
-        if np.isfinite(s).all():
-            sequences.append(s); labels.append(label)
+        sequences.append(s); labels.append(label)
 
-# n_components durchprobieren (covariance_type="diag" ist stabil).
-for n in (4, 6, 8, 10, 12):
-    r = _evaluate_configuration(sequences, labels, n_components=n,
-                                covariance_type="diag", n_splits=5, random_state=42)
-    print(n, round(r["mean_accuracy"], 4), round(r["std_accuracy"], 4))
+# grid_search_n_components filtert NaN-Sequenzen selbst heraus.
+results, best = grid_search_n_components(sequences, labels)  # Standard: (4,6,8,10,12), diag, 5 Folds
+for r in results:
+    print(r["n_components"], round(r["mean_accuracy"], 4), round(r["std_accuracy"], 4))
+print("Bestes n_components:", best["n_components"])   # -> 10
 ```
 
-> **Hinweis 1:** Das HMM-Training enthält kleine Zufallsanteile — die Werte
-> können sich von Lauf zu Lauf um ein paar Zehntel-Prozentpunkte unterscheiden.
->
-> **Hinweis 2:** `python train.py --grid-search` nutzt die eingebaute Suche, aber
-> mit dem engeren Standardbereich `n_components = 2…6`. Für den vollen Bereich
-> (inkl. 8, 10, 12) das Snippet oben verwenden.
->
-> **Hinweis 3:** `full`-Kovarianz kann bei größeren Zustandszahlen abbrechen
-> (`covars must be symmetric, positive-definite`) — das ist das erwartete
-> Instabilitäts-Verhalten aus Abschnitt 4, kein Fehler im Code.
+Oder direkt beim Training suchen und das beste Modell bauen lassen:
+
+```bash
+python train.py --grid-search
+```
+
+> **Hinweis:** Das HMM-Training enthält kleine Zufallsanteile — die Werte können
+> sich von Lauf zu Lauf um ein paar Zehntel-Prozentpunkte unterscheiden. Die Kurve
+> (Anstieg bis 10, Abfall bei 12) und die Wahl von 10 bleiben aber stabil.

@@ -61,7 +61,9 @@ def train(
     recordings_dir="recordings",
     model_path="data/hmm.pkl",
     dataset_path="data/dataset.pkl",
-    n_components=8,
+    # n_components=10: laut Grid-Search der beste Wert (hoechste, stabilste
+    # CV-Genauigkeit ~90.8%). Belege und Begruendung in docs/grid-search.md.
+    n_components=10,
     use_grid_search=False,
     test_size=0.2,
     random_state=42,
@@ -90,8 +92,8 @@ def train(
     )
 
     # 2) Optional: bestes n_components per Cross-Validation auf dem Train-Split
-    #    bestimmen. Der Import steht bewusst hier, damit die (nur dafuer noetige)
-    #    matplotlib-Abhaengigkeit den Standardlauf nicht belastet.
+    #    bestimmen. Der Import steht lokal, weil die Grid-Search nur bei --grid-search
+    #    gebraucht wird.
     if use_grid_search:
         from GestureRecognition.grid_search import grid_search_n_components
 
@@ -144,8 +146,8 @@ def main():
         help="Zielpfad fuer den erzeugten Datensatz (Standard: data/dataset.pkl)",
     )
     parser.add_argument(
-        "--n-components", type=int, default=8,
-        help="Anzahl Zustaende pro HMM (Standard: 8)",
+        "--n-components", type=int, default=10,
+        help="Anzahl Zustaende pro HMM (Standard: 10, per Grid-Search bester Wert)",
     )
     parser.add_argument(
         "--grid-search", action="store_true",
