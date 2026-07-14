@@ -20,8 +20,8 @@ erkannten Gesten:
 Accuracy = richtig erkannte Gesten / alle getesteten Gesten
 ```
 
-Beispiel: Wenn das Modell von 100 Gesten 79 richtig errät, ist die
-Accuracy = 79 %.
+Beispiel: Wenn das Modell von 100 Gesten 90 richtig errät, ist die
+Accuracy = 90 %.
 
 Wir berechnen **zwei** verschiedene Accuracy-Werte, weil sie zwei
 unterschiedliche Fragen beantworten. Das ist der wichtigste Punkt dieser Seite.
@@ -32,7 +32,7 @@ Hier trainieren und testen wir mit **denselben Personen**, nur mit
 unterschiedlichen Aufnahmen. Das Modell hat also von jeder Person schon Beispiele
 gesehen.
 
-> **Ergebnis: ~79 % richtig** (getestet auf 210 Test-Gesten, trainiert auf 839).
+> **Ergebnis: ~90 % richtig** (getestet auf 350 Test-Gesten, trainiert auf 1399).
 
 Das ist die *optimistische* Zahl.
 
@@ -43,9 +43,12 @@ Hier halten wir **eine ganze Person komplett aus dem Training heraus**
 diese Hand also **noch nie gesehen** – genau wie in der Prüfung, wenn der Prüfer
 live neue Gesten aufnimmt.
 
-> **Ergebnis: ~36 % richtig** (getestet auf 385 Gesten dieser einen Person).
+> **Ergebnis: ~60 % richtig** (getestet auf 434 Gesten dieser einen Person).
+> Je nachdem, welche Person man raushält, liegt der Wert zwischen ~58 % und ~77 %.
 
-Das ist die *ehrliche* Zahl für die Prüfungssituation.
+Das ist die *ehrliche* Zahl für die Prüfungssituation — **außer** die neue
+Person nimmt vorher ein paar eigene Aufnahmen auf und trainiert mit
+(`schnell_aufnahme.py` + `python train.py`). Dann gilt die Standard-Zahl.
 
 ### Warum ist die zweite Zahl so viel schlechter?
 
@@ -86,29 +89,28 @@ Aus der Matrix abgelesen (wahr → vom Modell geraten):
 
 | Verwechslung | Anzahl | Mögliche Erklärung |
 |---|---|---|
-| P → F | 3× | Ähnlicher Bewegungsanfang (senkrechter Strich) |
-| N → P | 3× | Ähnliche Auf-/Ab-Bewegung |
-| E → S | 3× | Beide bestehen aus kurzen Kurven |
-| S → A | 2× | Runde Bewegung wird verwechselt |
-| R → K | 2× | Ähnliche Ecken/Richtungswechsel |
-| K → X | 2× | Beide haben kreuzende Bewegungen |
-| G → S | 2× | Runde Form |
+| G → Q | 4× | Beide: runde Form mit „Schwänzchen" am Ende |
+| Q → D | 3× | Runde Grundform, ähnlicher Verlauf |
+| O → D | 2× | Beide fast geschlossene Rundung |
+| Z → Q, Y → X, X → Q | je 1× | Einzelfälle |
 
-Das sind fast immer **Buchstaben mit ähnlichem Bewegungsverlauf** – ein Zeichen,
-dass das Modell sinnvoll (nach der Form der Bewegung) unterscheidet und nicht
-zufällig rät.
+Es bleiben fast nur noch **runde Buchstaben** übrig, deren Bewegungsspur sich
+wirklich ähnelt (G/Q/O/D) – ein Zeichen, dass das Modell sinnvoll nach der
+Form der Bewegung unterscheidet und nicht zufällig rät. Die früher häufigen
+Verwechslungen (P→F, N→P, E→S) sind durch das Resampling und mehr
+Trainingsdaten verschwunden.
 
 ---
 
 ## 4. Welche Buchstaben laufen gut, welche schlecht?
 
-**Sehr gut erkannt (100 %):** F, I, Q, U, V, W, Z
-**Gut (~85–90 %):** A, D, O, T, Y
-**Schwach:** N (38 %), R (38 %), E (50 %), G / K / P (je 62 %)
+**Perfekt erkannt (100 %):** A, B, D, E, F, H, I, J, M, N, R, V, W
+**Gut (85–95 %):** C, K, L, O, P, Q, S, T, U, X, Y, Z
+**Schwächster Buchstabe:** G (67 %, wird mit Q verwechselt)
 
-Die schwachen Buchstaben sind genau die aus der Verwechslungs-Tabelle oben. Wer
-das Modell verbessern will, sollte **für diese Buchstaben mehr und sauberere
-Aufnahmen** sammeln.
+Wer das Modell weiter verbessern will, sollte also vor allem **für G (und die
+runden Nachbarn Q, O, D) mehr und deutlich unterscheidbare Aufnahmen** sammeln
+— z. B. das „Schwänzchen" des G bewusst betonen.
 
 ---
 
@@ -127,7 +129,13 @@ ergebnis = evaluate_classifier(
     held_out_person="yannik",          # diese Person wird fuer den 2. Test rausgehalten
 )
 print(ergebnis)
-# -> {'accuracy_standard': 0.79..., 'accuracy_new_person': 0.36..., 'held_out_person': 'yannik'}
+# -> {'accuracy_standard': 0.90..., 'accuracy_new_person': 0.60..., 'held_out_person': 'yannik'}
+```
+
+Die drei Demo-GIFs im README entstehen übrigens genauso reproduzierbar:
+
+```bash
+python demo_gif.py            # nutzt data/hmm.pkl, schreibt images/demo_*.gif
 ```
 
 > **Hinweis:** Das Training eines HMM enthält kleine Zufallsanteile. Die Werte
@@ -138,9 +146,13 @@ print(ergebnis)
 
 ## 6. Kurzfazit
 
-- Bekannte Personen werden zuverlässig erkannt (**~79 %**).
-- Eine völlig neue Person ist deutlich schwerer (**~36 %**) – das ist die ehrliche
-  Prüfungs-Erwartung.
-- Verwechselt werden vor allem Buchstaben mit **ähnlicher Bewegung** – das Modell
+- Bekannte Personen werden zuverlässig erkannt (**~90 %**, 13 von 26
+  Buchstaben sogar fehlerfrei).
+- Eine völlig neue Person ist deutlich schwerer (**~60 %**) – das ist die
+  ehrliche Erwartung, wenn jemand ohne eigene Trainingsdaten loslegt. Mit ein
+  paar eigenen Aufnahmen + `python train.py` gilt die 90-%-Zahl.
+- Verwechselt werden fast nur noch **runde Buchstaben** (G/Q/O/D) – das Modell
   arbeitet also plausibel.
-- Größter Hebel für Verbesserung: **mehr verschiedene Personen** im Training.
+- Größte Hebel waren: **Resampling auf feste Gestenlänge**, **min_covar**
+  gegen den HMM-Kollaps und **mehr verschiedene Personen** im Training
+  (siehe [design-entscheidungen.md](design-entscheidungen.md)).
