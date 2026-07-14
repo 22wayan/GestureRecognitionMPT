@@ -39,22 +39,74 @@ def _resample(traj, n):
     return np.column_stack([x, y])
 
 
-def _to_features(traj, resample_length=RESAMPLE_LENGTH):
+# Zentrale Wahl des Feature-Formats (Issue #59).
+#
+# "xyv"      -> (x, y, speed)           : die Baseline, 3 Features pro Punkt.
+# "xydxdyv"  -> (x, y, dx, dy, speed)   : zusaetzlich die Bewegungsrichtung.
+#
+# dx/dy sind die Schritte des Fingers von Punkt zu Punkt (der Richtungsvektor).
+# Die skalare Geschwindigkeit sagt nur, WIE STARK sich der Finger bewegt --
+# dx/dy sagen zusaetzlich, WOHIN. Der Vergleich beider Varianten (Standard-
+# Accuracy und Personen-Hold-out) steht in reports/feature_vergleich.md und
+# wird mit compare_features.py reproduziert. Gewechselt wird nur, wenn die
+# Generalisierung messbar besser oder stabiler wird.
+FEATURE_SET = "xyv"
+
+
+def _add_direction_and_speed(traj: np.ndarray) -> np.ndarray:
+    """
+    Erweitert eine (x, y)-Trajektorie um Richtung UND Geschwindigkeit.
+
+    Pro Punkt werden angehaengt:
+      - dx, dy : der Schritt seit dem letzten Punkt (Bewegungsrichtung)
+      - speed  : die Laenge dieses Schritts (wie in :func:`_add_velocity`)
+
+    Der erste Punkt bekommt ueberall 0.0. ``nan``-Zeilen werden wie in
+    :func:`_add_velocity` mit ``nan`` fortgeschrieben.
+
+    Returns
+    -------
+    np.ndarray
+        Trajektorie der Form (N, 5) mit Spalten (x, y, dx, dy, speed).
+    """
+    deltas = np.zeros((len(traj), 2))
+    speed = np.zeros((len(traj), 1))
+    for i in range(1, len(traj)):
+        if not (np.isnan(traj[i]).any() or np.isnan(traj[i - 1]).any()):
+            deltas[i] = traj[i] - traj[i - 1]
+            speed[i] = np.linalg.norm(deltas[i])
+        else:
+            deltas[i] = np.nan
+            speed[i] = np.nan
+    return np.hstack([traj, deltas, speed])
+
+
+def _to_features(traj, resample_length=RESAMPLE_LENGTH, feature_set=None):
     """Macht aus den rohen Punkten die Zahlen, die das Modell zum Lernen braucht.
 
     Drei einfache Schritte nacheinander:
       1. _resample     -> alle Gesten auf gleich viele Punkte bringen
       2. _normalize    -> Lage und Groesse angleichen (egal wo/wie gross gemalt)
-      3. _add_velocity -> Geschwindigkeit als dritte Spalte anhaengen
-    Ergebnis: eine Liste mit (x, y, geschwindigkeit) pro Punkt.
+      3. Features anhaengen, je nach ``feature_set``:
+         - "xyv"     -> (x, y, speed)          ueber :func:`_add_velocity`
+         - "xydxdyv" -> (x, y, dx, dy, speed)  ueber :func:`_add_direction_and_speed`
+
+    ``feature_set=None`` nimmt die zentrale Wahl ``FEATURE_SET``.
 
     Wichtig: Training UND Live rufen genau diese Funktion auf. So haben beide
     immer das gleiche Format und koennen nie auseinanderlaufen.
     """
+    if feature_set is None:
+        feature_set = FEATURE_SET
     traj = _resample(traj, resample_length)
     traj = _normalize(traj)
-    traj = _add_velocity(traj)
-    return traj
+    if feature_set == "xyv":
+        return _add_velocity(traj)
+    if feature_set == "xydxdyv":
+        return _add_direction_and_speed(traj)
+    raise ValueError(
+        f"Unbekanntes feature_set '{feature_set}' (erlaubt: 'xyv', 'xydxdyv')."
+    )
 
 
 def _extract_trajectory(recording: dict, finger_idx: int) -> np.ndarray | None:
