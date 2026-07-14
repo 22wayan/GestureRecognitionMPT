@@ -435,6 +435,7 @@ python demo_gif.py --letters B,X,Z  # eigene Auswahl
 Alle wichtigen Entscheidungen (Features, Resampling, HMM-Hyperparameter,
 Live-Schwellenwerte) sind mit Begründung an einem Ort gesammelt:
 **[docs/design-entscheidungen.md](docs/design-entscheidungen.md)**.
+
 Die Kurzfassung:
 
 - **Features:** (x, y, Geschwindigkeit) der Zeigefingerspitze — eine
@@ -445,6 +446,12 @@ Die Kurzfassung:
   Varianz-Kollaps.
 - **Live:** Hysterese-Segmentierung mit Entprellen (`stop_hold`), unsichere
   Vorhersagen werden als `?` angezeigt (Score- und Margin-Schwelle).
+
+## Teambeiträge
+
+Die individuellen Beiträge der vier Teammitglieder, die gemeinsame Arbeit und
+eine faire Aufteilung für die Prüfungspräsentation sind anhand der Git-Historie
+dokumentiert: **[docs/teambeitraege.md](docs/teambeitraege.md)**.
 
 ## Limitations und mögliche Erweiterungen
 
