@@ -127,19 +127,61 @@ class HMMClassifier:
             class_lengths = [l for l, m in zip(lengths, mask) if m]
             class_X = self._split_and_concat(X, lengths, mask)
 
+            model = self._fit_class_model(class_X, class_lengths, label)
+            self._models[label] = model
+            logger.info("Klasse '%s' trainiert (%d Sequenzen)", label, len(class_lengths))
+
+        return self
+
+    def _fit_class_model(
+        self, class_X: np.ndarray, class_lengths: list[int], label
+    ) -> GaussianHMM:
+        """Trainiert ein GaussianHMM für eine Klasse und fängt den Varianz-Kollaps
+        (ein Zustand kollabiert auf einen Punkt -> Kovarianz -> NaN) ab.
+
+        Bei wenigen Trainingssequenzen — etwa einer neu vom Prüfer aufgenommenen
+        Geste mit nur ~8 Aufnahmen — sind ``self.n_components`` Zustände manchmal
+        zu viele: ein Zustand bekommt kaum Daten, seine Varianz läuft trotz
+        ``min_covar`` in NaN, und ``score()`` liefert dann für diese Klasse
+        ``NaN``/``-inf`` -> die Klasse wird nie vorhergesagt (stiller 0%-Recall).
+        Das ist derselbe Effekt, der früher den Buchstaben F kippen ließ, hier aber
+        datenabhängig (ein bestimmter Trainings-Split kippt, ein anderer nicht).
+
+        Fallback: schlägt das Training mit ``self.n_components`` Zuständen in NaN um,
+        wird die Zustandszahl schrittweise reduziert, bis das Klassenmodell stabil
+        ist. Gut besetzte Klassen behalten so die volle Zustandszahl, nur datenarme
+        Klassen bekommen automatisch ein kleineres, stabiles Modell.
+        """
+        for n_components in range(self.n_components, 0, -1):
             model = GaussianHMM(
-                n_components=self.n_components,
+                n_components=n_components,
                 covariance_type=self.covariance_type,
                 min_covar=self.min_covar,
                 n_iter=self.n_iter,
                 tol=self.tol,
                 random_state=self.random_state,
             )
-            model.fit(class_X, class_lengths)
-            self._models[label] = model
-            logger.info("Klasse '%s' trainiert (%d Sequenzen)", label, len(class_lengths))
+            try:
+                model.fit(class_X, class_lengths)
+            except Exception:
+                # Fit selbst fehlgeschlagen (z.B. zu wenige Daten für so viele
+                # Zustände) -> wie einen Kollaps behandeln und weniger Zustände nehmen.
+                continue
 
-        return self
+            collapsed = np.isnan(model.means_).any() or np.isnan(model.covars_).any()
+            if not collapsed:
+                if n_components != self.n_components:
+                    logger.warning(
+                        "Klasse '%s': Training mit %d Zuständen kollabierte (NaN) -> "
+                        "stabil mit %d Zuständen (zu wenige Trainingssequenzen?).",
+                        label, self.n_components, n_components,
+                    )
+                return model
+
+        raise RuntimeError(
+            f"Klasse '{label}': HMM kollabiert selbst mit einem Zustand zu NaN — "
+            f"Trainingsdaten prüfen."
+        )
 
     def decision_function(self, X: np.ndarray, lengths: list[int]) -> np.ndarray:
         """
