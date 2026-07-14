@@ -32,4 +32,6 @@ html_static_path = ['_static']
 import os
 import sys
 
+# Projekt-Wurzel in den Python-Pfad haengen, damit Sphinx (autodoc) unsere
+# Module unter GestureRecognition/ importieren und ihre Docstrings lesen kann.
 sys.path.insert(0, os.path.abspath('../..'))

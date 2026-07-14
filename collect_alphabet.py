@@ -1,3 +1,17 @@
+"""
+Gefuehrte Alphabet-Aufnahme von der Kommandozeile.
+
+Fuehrt eine Person durch die Buchstaben (ganz A-Z, ein Bereich oder eine freie
+Auswahl) und nimmt pro Buchstabe mehrere Takes auf. Die eigentliche Logik lebt
+in :func:`GestureRecognition.labeling.collect_alphabet` -- dieses Skript ist
+nur die Bedienoberflaeche dafuer.
+
+Benutzung
+---------
+    python collect_alphabet.py --person wayan             # interaktive Auswahl
+    python collect_alphabet.py --person wayan --start Q --end T
+"""
+
 import argparse
 
 from GestureRecognition.labeling import collect_alphabet, _parse_letters

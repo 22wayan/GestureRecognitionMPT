@@ -6,8 +6,8 @@ Idee in einem Satz
 Statt die Zustandszahl zu raten, probieren wir mehrere Werte systematisch durch
 und messen fair, welcher am besten verallgemeinert.
 
-Die zwei Begriffe (fuer Einsteiger)
------------------------------------
+Die zwei Begriffe
+-----------------
 - **Grid Search**: mehrere Werte fuer einen Parameter der Reihe nach ausprobieren
   und jeden messen. Hier ist der Parameter ``n_components`` -- also wie viele
   "Bewegungsphasen" (verborgene Zustaende) jedes Buchstaben-Modell benutzen darf.

@@ -21,42 +21,13 @@ class HMMModule(Module):
 
     def __init__(self, outputSignal="markov", model_path="data/hmm.pkl", **kwargs):
         """
-        Konstruktor des Moduls.
+        Meldet das Modul beim SignalHub-Framework an.
 
-        Ziel ist es, das Modul beim Framework korrekt zu registrieren.
-
-        Hinweise
-        --------
-        - Ein Modul muss definieren, **welche Signale es empfangen möchte**.
-        - Diese werden über ``inputSignals`` angegeben.
-        - Nur Signale, die hier subscribed werden, erscheinen später im
-          ``data`` Dictionary der Methoden :meth:`start` und :meth:`step`.
-
-        Für dieses Modul werden unter anderem folgende Signale benötigt:
-
-        - ``config`` : Systemkonfiguration
-        - ``preprocessor`` : normalisierte Trajektorien
-
-        Zusätzlich muss ein **Output-Schema** definiert werden.
-
-        Output Schema
-        -------------
-        Das Modul erzeugt ein Signal mit dem Namen ``markov``.
-
-        Dieses Signal enthält Informationen über die erkannte Geste
-        sowie deren Klassifikationsscore.
-
-        Beispiel:
-
-        ``outputSchema={"type": "object", "properties": {outputSignal: {}}}``
-
-        .. note::
-           Die Basisklasse :class:`Module` erwartet beim Aufruf von
-           ``super().__init__`` unter anderem:
-
-           - ``inputSignals``
-           - ``outputSchema``
-           - ``name`` des Moduls
+        Wir abonnieren ``config`` (Einstellungen) und ``preprocessor``
+        (die fertige, normalisierte Trajektorie einer Geste). Als Ausgabe
+        melden wir das Signal ``markov`` an, in dem das Klassifikations-
+        ergebnis (Label, Score, Margin) landet, plus ``galy`` für die
+        Anzeige im Kamerabild.
 
         Parameters
         ----------
@@ -64,7 +35,8 @@ class HMMModule(Module):
             Name des erzeugten Output-Signals.
 
         model_path : str, optional
-            Pfad zu einem gespeicherten HMM-Modell.
+            Pfad zu einem gespeicherten HMM-Modell (Standard: data/hmm.pkl,
+            wird von train.py erzeugt).
 
         **kwargs
             Weitere Parameter, die an :class:`Module` weitergegeben werden.
@@ -96,30 +68,12 @@ class HMMModule(Module):
 
     def start(self, data):
         """
-        Initialisierung des Moduls.
+        Initialisierung des Moduls (läuft einmal beim Start).
 
-        Diese Methode wird einmal beim Start des Moduls ausgeführt.
-
-        Ziel ist es, ein zuvor trainiertes Hidden-Markov-Modell zu laden,
-        das später zur Klassifikation verwendet wird.
-
-        Hinweise
-        --------
-        - Das Modell kann aus einer Datei geladen werden.
-        - Typischerweise wird dafür eine Klassenmethode verwendet,
-          die ein gespeichertes Modell rekonstruiert.
-        - Das geladene Modell sollte als Attribut des Moduls gespeichert
-          werden, damit es in :meth:`step` verwendet werden kann.
-
-        .. tip::
-           Trenne klar zwischen:
-            - Modell laden (``start``)
-            - Modell anwenden (``step``)
-
-        .. warning::
-           Stelle sicher, dass:
-            - der Pfad korrekt ist
-            - das Modell zum erwarteten Datenformat passt
+        Hier lesen wir die Schwellwerte aus der Konfiguration und laden das
+        trainierte HMM-Modell von der Festplatte. Fehlt die Modelldatei
+        (z.B. weil ``python train.py`` noch nie lief), bleibt der
+        Klassifikator ``None`` und das Modul zeigt dauerhaft nur "...".
 
         Parameters
         ----------
@@ -148,6 +102,7 @@ class HMMModule(Module):
         return {}
 
     def _build_galy(self, config, label, score, margin):
+        """Baut die Text-Anzeige (Label, Score, Margin) für das Kamerabild."""
         galy = GALY()
 
         # Das Label wird als Overlay-EBENE direkt auf das Kamerabild "Main"
@@ -186,43 +141,13 @@ class HMMModule(Module):
         """
         Verarbeitung eines einzelnen Frames.
 
-        Ziel ist es, eine vorverarbeitete Trajektorie zu klassifizieren
-        und die wahrscheinlichste Geste zu bestimmen.
-
-        Hinweise
-        --------
-        - Greife auf das ``preprocessor`` Signal zu.
-        - Falls keine Trajektorie vorhanden ist, kann die Verarbeitung
-          übersprungen werden.
-        - Das geladene HMM-Modell kann anschließend verwendet werden,
-          um eine Entscheidung für die aktuelle Bewegung zu berechnen.
-        - Das Ergebnis enthält typischerweise Scores für mehrere Klassen.
-        - Die Klasse mit dem höchsten Score kann als Ergebnis gewählt werden.
-
-        Zusätzlich kann eine Visualisierung erzeugt werden:
-
-        - Erzeuge ein :class:`GALY` Objekt.
-        - Lege eine neue Zeichenebene an.
-        - Verwende :meth:`putText`, um Score und Label darzustellen.
-        - Für die Skalierung der Zeichenebene können Parameter aus der
-          Konfiguration über :meth:`get_nested_key` gelesen werden.
-
-        .. tip::
-           Typischer Ablauf:
-            1. Daten prüfen (existiert eine Sequenz?)
-            2. Modell anwenden
-            3. Scores interpretieren
-            4. Ergebnis visualisieren
-
-        .. note::
-           Du entscheidest selbst:
-            - wie du Scores darstellst
-            - ob du nur das beste Label oder mehrere Kandidaten zeigst
-
-        .. warning::
-           Achte darauf, dass:
-            - das Eingabeformat exakt zum Trainingsformat passt
-            - keine leeren oder fehlerhaften Sequenzen verarbeitet werden
+        In den meisten Frames liefert der Preprocessor ``None`` -- dann
+        zeigen wir einfach das letzte Ergebnis weiter an. Kommt eine fertige
+        Trajektorie an, lassen wir das HMM-Modell alle Klassen bewerten,
+        nehmen die Klasse mit dem besten Score und prüfen mit zwei
+        Schwellwerten, ob wir dem Ergebnis trauen: Ist der Score zu schlecht
+        oder der Abstand zum zweitbesten Kandidaten (Margin) zu klein,
+        geben wir lieber "?" (unbekannt) aus.
 
         Parameters
         ----------
@@ -235,12 +160,8 @@ class HMMModule(Module):
         Returns
         -------
         dict
-            Soll die erkannte Geste sowie optional Visualisierungsdaten
-            enthalten.
-
-            Beispiel:
-
-            ``return {outputSignal: result, "galy": galy}``
+            ``{outputSignal: result, "galy": galy}`` mit Label, Score,
+            Margin und allen Klassen-Scores.
         """
         trajectory = data.get("preprocessor")
         config = data.get("config", {})
@@ -266,6 +187,9 @@ class HMMModule(Module):
             # anzeigen, damit das Fenster nicht schwarz wird.
             return self._show_last(config)
 
+        # Die Log-Scores haengen von der Laenge der Sequenz ab (mehr Frames =
+        # kleinerer Score). Wir teilen deshalb durch die Laenge, damit kurze und
+        # lange Gesten mit denselben Schwellwerten vergleichbar sind.
         score_vector = scores[0]
         normalized_scores = score_vector / max(len(trajectory), 1)
         best_index = int(np.argmax(normalized_scores))
@@ -309,22 +233,7 @@ class HMMModule(Module):
 
     def stop(self, data):
         """
-        Wird aufgerufen, wenn das Modul beendet wird.
-
-        Ziel ist es, bei Bedarf interne Zustände zurückzusetzen
-        oder Ressourcen freizugeben.
-
-        Hinweise
-        --------
-        - In vielen Fällen ist keine spezielle Bereinigung notwendig.
-
-        .. note::
-           Diese Methode ist optional, kann aber relevant werden,
-           wenn Modelle oder externe Ressourcen verwaltet werden.
-
-        Parameters
-        ----------
-        data : dict
-            Letzte übergebene Daten des Frameworks.
+        Wird beim Beenden aufgerufen. Das Modell liegt nur im Speicher,
+        deshalb gibt es hier nichts aufzuräumen.
         """
         pass
