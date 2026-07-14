@@ -1,0 +1,44 @@
+# Python-Tests bei Push (main) und bei jedem Pull Request.
+#
+# Wichtig (Issue #62): Das trainierte Modell data/hmm.pkl ist gitignored und fehlt
+# im frischen Clone. Die Test-Fixture `ensure_hmm_model` (tests/conftest.py)
+# trainiert es deshalb im Testlauf deterministisch aus recordings/ -- die
+# modellabhängigen End-to-End-Tests werden also wirklich ausgeführt und nicht per
+# skipif übersprungen. Ob trainiert oder geladen wurde, steht dank
+# `--log-cli-level=WARNING` klar im Log ("HMM-Modell ... trainiert" / "... geladen").
+#
+# Beobachtete Laufzeit / Ressourcen (Richtwerte):
+#   - Lokal (Apple Silicon): Modelltraining ~25 s, gesamte Suite ~30 s.
+#   - In CI (ubuntu-latest): zusätzlich Dependency-Install (mediapipe, signalhub via
+#     git) ~2-3 min; Training i. d. R. 1-2 min. Gesamt üblicherweise < 8 min.
+#   - Speicher: unkritisch (< 1-2 GB); erzeugtes data/hmm.pkl ~50 KB.
+# timeout-minutes deckelt Ausreißer.
+
+name: Python-Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 3.12 einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Tests ausführen (Modell wird bei Bedarf trainiert)
+        run: pytest -v -o log_cli=true --log-cli-level=WARNING
