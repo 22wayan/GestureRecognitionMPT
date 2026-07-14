@@ -8,8 +8,9 @@ Alle Zahlen stammen aus der Funktion
 [`evaluate_classifier()`](../GestureRecognition/visualization.py) und wurden auf
 unserem eigenen Datensatz gemessen (26 Klassen A–Z, Aufnahmen von 4 Personen).
 
-> **Messlauf:** 2026-07-14, Commit `5866178`. Konfiguration: ein GaussianHMM pro
-> Klasse, `n_components=10`, `covariance_type="diag"`, `min_covar=0.03`,
+> **Messlauf:** 2026-07-14, Commit `fec4a5e` (nach der gemeinsamen Segmentierung
+> aus #58 — Training schneidet die Geste jetzt wie der Live-Modus zu). Konfiguration:
+> ein GaussianHMM pro Klasse, `n_components=10`, `covariance_type="diag"`, `min_covar=0.03`,
 > `test_size=0.2`, `random_state=42`. Gemessen auf den **26 A–Z-Klassen**; die
 > Demo-Geste `recordings/Dreieck` ist ausgeklammert (nicht Teil des Alphabets) und
 > ändert die Zahlen praktisch nicht. Reproduktion: siehe
@@ -38,7 +39,7 @@ Hier trainieren und testen wir mit **denselben Personen**, nur mit
 unterschiedlichen Aufnahmen. Das Modell hat also von jeder Person schon Beispiele
 gesehen.
 
-> **Ergebnis: 93 % richtig** (326 von 350 Test-Gesten, trainiert auf 1399;
+> **Ergebnis: 92 % richtig** (327 von 357 Test-Gesten, trainiert auf 1428;
 > `n_components=10`).
 
 Das ist die *optimistische* Zahl.
@@ -116,28 +117,27 @@ Aus der Matrix abgelesen (wahr → vom Modell geraten):
 
 | Verwechslung | Anzahl | Mögliche Erklärung |
 |---|---|---|
-| G → Q | 4× | Beide: runde Form mit „Schwänzchen" am Ende |
-| Q → D | 3× | Runde Grundform, ähnlicher Verlauf |
-| O → D | 2× | Beide fast geschlossene Rundung |
-| P → D, O → R, S → Q, L → F, S → J | je 1× | Einzelfälle |
+| O → G | 3× | Beide runde, fast geschlossene Bewegung |
+| Z → C, Y → T, G → Q, P → T | je 2× | ähnlicher Verlauf oder Endpunkt |
+| E → G, L → F, S → O | je 1× | Einzelfälle |
 
-Es bleiben fast nur noch **runde Buchstaben** übrig, deren Bewegungsspur sich
-wirklich ähnelt (G/Q/O/D) – ein Zeichen, dass das Modell sinnvoll nach der
-Form der Bewegung unterscheidet und nicht zufällig rät. Die früher häufigen
-Verwechslungen (P→F, N→P, E→S) sind durch das Resampling und mehr
-Trainingsdaten verschwunden.
+Die Verwechslungen betreffen vor allem **runde bzw. ähnlich verlaufende
+Buchstaben** (O/G/Q, C/Z) – ein Zeichen, dass das Modell nach der Form der
+Bewegung unterscheidet und nicht zufällig rät. Seit Training und Live dieselbe
+Segmentierung benutzen (#58, nur noch die eigentliche Geste ohne Anfahrt), fällt
+vor allem **O** schwerer als vorher – die knappere Spur macht O und G ähnlicher.
 
 ---
 
 ## 4. Welche Buchstaben laufen gut, welche schlecht?
 
-**Perfekt erkannt (100 %):** A, B, D, E, F, H, I, J, M, N, R, V, W
-**Gut (85–95 %):** C, K, L, O, P, Q, S, T, U, X, Y, Z
-**Schwächster Buchstabe:** G (67 %, wird mit Q verwechselt)
+**Perfekt erkannt (100 %):** A, B, D, F, I, M, N, Q, R, T, V
+**Gut (85–95 %):** E, H, J, K, L, P, S, U, W, X, Z
+**Schwächer (< 85 %):** C (82 %), Y (79 %), G (75 %), O (56 %)
+**Schwächster Buchstabe:** O (56 %, wird am ehesten mit G verwechselt)
 
-Wer das Modell weiter verbessern will, sollte also vor allem **für G (und die
-runden Nachbarn Q, O, D) mehr und deutlich unterscheidbare Aufnahmen** sammeln
-— z. B. das „Schwänzchen" des G bewusst betonen.
+Wer das Modell weiter verbessern will, sollte also vor allem **für O (und die
+runden Nachbarn G, Q) mehr und deutlich unterscheidbare Aufnahmen** sammeln.
 
 ---
 
@@ -167,7 +167,7 @@ for person in ["yannik", "wayan", "arian", "Azad"]:
         held_out_person=person,                # diese Person wird komplett rausgehalten
     )
     print(person, round(r["accuracy_new_person"], 3), round(r["accuracy_standard"], 3))
-# yannik 0.700 0.931 | wayan 0.795 0.931 | arian 0.795 0.931 | Azad 0.625 0.931
+# yannik 0.700 0.916 | wayan 0.795 0.916 | arian 0.795 0.916 | Azad 0.625 0.916
 ```
 
 Die drei Demo-GIFs im README entstehen übrigens genauso reproduzierbar:
@@ -184,14 +184,14 @@ python demo_gif.py            # nutzt data/hmm.pkl, schreibt images/demo_*.gif
 
 ## 6. Kurzfazit
 
-- Bekannte Personen werden zuverlässig erkannt (**93 %**, 13 von 26
+- Bekannte Personen werden zuverlässig erkannt (**92 %**, 11 von 26
   Buchstaben sogar fehlerfrei).
 - Eine völlig neue Person ist deutlich schwerer (**im Mittel 73 %**, je nach
   Person 63–80 %) – das ist die ehrliche Erwartung, wenn jemand ohne eigene
   Trainingsdaten loslegt. Mit ein paar eigenen Aufnahmen + `python train.py` gilt
-  die 93-%-Zahl.
-- Verwechselt werden fast nur noch **runde Buchstaben** (G/Q/O/D) – das Modell
-  arbeitet also plausibel.
+  die 92-%-Zahl.
+- Verwechselt werden vor allem **runde/ähnlich verlaufende Buchstaben** (O/G/Q,
+  C/Z) – das Modell arbeitet also plausibel.
 - Größte Hebel waren: **Resampling auf feste Gestenlänge**, **min_covar**
   gegen den HMM-Kollaps und **mehr verschiedene Personen** im Training
   (siehe [design-entscheidungen.md](design-entscheidungen.md)).
