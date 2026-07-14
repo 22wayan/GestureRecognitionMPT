@@ -1,5 +1,4 @@
-from SignalHub import GALY, get_nested_key, Module
-from collections import deque
+from SignalHub import get_nested_key, Module
 import numpy as np
 
 class Preprocessor(Module):
@@ -131,17 +130,21 @@ class Preprocessor(Module):
         # Geste dann NICHT mehr; nur ein echtes Anhalten ueber mehrere Frames tut das.
         self.stop_hold = get_nested_key("config.preprocessor.stop_hold", data, 4)
 
-        # Now, I create a deque to store the finger positions. It has a maximum length to keep only recent points.
-        self.buffer = deque(maxlen=self.buffer_size)
-        # lost_counter counts how many frames the hand has been lost.
-        self.lost_counter = 0
-        # is_moving indicates if the gesture is currently active based on hysteresis.
-        self.is_moving = False
-        # slow_frames zaehlt, wie viele Frames der Finger schon am Stueck langsam ist.
-        # Es gehoert zum Entprellen der Stopp-Bedingung (siehe stop_hold): erst wenn
-        # dieser Zaehler stop_hold erreicht, gilt die Geste als beendet.
-        self.slow_frames = 0
-        
+        # Die eigentliche Segmentierungs-Logik (Hysterese, Entprellen, Handverlust)
+        # lebt seit Issue #58 in GestureRecognition.labeling.GestureSegmenter --
+        # als EINE gemeinsame Implementierung fuer Live-Betrieb und Datensatzbau.
+        # Dieses Modul ist nur noch der duenne Live-Wrapper darum.
+        from GestureRecognition.labeling import GestureSegmenter
+
+        self.segmenter = GestureSegmenter(
+            min_speed=self.min_speed_corner,
+            reset_speed=self.reset_speed_corner,
+            stop_hold=self.stop_hold,
+            max_lost=self.max_lost,
+            min_steps=self.min_steps,
+            buffer_size=self.buffer_size,
+        )
+
         # Return an empty dict as required.
         return {}
 
@@ -203,84 +206,25 @@ class Preprocessor(Module):
 
             ``return {outputSignal: trajectory}``
         """
-        # As a beginner student, I implement the collection logic here.
-        # First, get the detector data.
+        # Fingerposition dieses Frames bestimmen (oder None = keine Hand) und an
+        # die gemeinsame Segmentierungs-Logik weiterreichen. Start/Stopp/Entprellen/
+        # Handverlust entscheidet der GestureSegmenter -- dieselbe Logik, die auch
+        # der Datensatzbau benutzt (Issue #58).
         detector = data.get('detector')
+        pos = None
         if detector and detector.get('hands'):
-            # If a hand is detected, extract the finger position.
             hand = detector['hands'][0]  # Assume the first hand.
             landmark = hand['landmarks'][self.finger_idx]
             pos = np.array([landmark['x'], landmark['y']])
-            # Append the position to the buffer.
-            self.buffer.append(pos)
-            # Reset the lost counter since we have detection.
-            self.lost_counter = 0
-            # Check for movement using hysteresis.
-            if len(self.buffer) > 1:
-                # Calculate the speed as the norm of the difference.
-                diff = np.linalg.norm(self.buffer[-1] - self.buffer[-2])
-                if not self.is_moving and diff > self.min_speed_corner:
-                    # --- Gestenstart ---
-                    self.is_moving = True
-                    self.slow_frames = 0
-                    # Puffer beim Start leeren: Alles davor (Hand ins Bild fuehren,
-                    # ruckeln, Reste der vorigen Geste) gehoert NICHT zum Buchstaben
-                    # und wuerde die Normalisierung verzerren (falscher Mittelpunkt,
-                    # falsche Groesse). Die letzten zwei Punkte behalten wir -- sie
-                    # sind schon Teil der Bewegung (aus ihnen wurde 'diff' berechnet)
-                    # und markieren den Startpunkt des Buchstabens.
-                    start_points = list(self.buffer)[-2:]
-                    self.buffer.clear()
-                    self.buffer.extend(start_points)
-                elif self.is_moving and diff < self.reset_speed_corner:
-                    # Finger ist langsam. Aber EIN langsamer Frame reicht nicht zum
-                    # Beenden: an den Ecken von M/W/Z bremst man kurz ab, ohne fertig
-                    # zu sein. Erst nach 'stop_hold' langsamen Frames am Stueck gilt
-                    # die Geste als beendet (Entprellen). So wird ein Buchstabe nicht
-                    # mehr an jeder Ecke in Stuecke zerhackt.
-                    self.slow_frames += 1
-                    if self.slow_frames >= self.stop_hold:
-                        # Stop collecting: Geste ist wirklich zu Ende.
-                        self.is_moving = False
-                        self.slow_frames = 0
-                        # Process the trajectory if enough points.
-                        if len(self.buffer) >= self.min_steps:
-                            trajectory = self.process_trajectory()
-                            # Puffer nach dem Emittieren leeren, damit die naechste
-                            # Geste sauber startet (ohne Reste der vorherigen).
-                            self.buffer.clear()
-                            return {self.outputSignal: trajectory}
-                        else:
-                            # Discard if not enough points.
-                            self.buffer.clear()
-                elif self.is_moving:
-                    # Finger bewegt sich wieder normal (schneller als die
-                    # Stopp-Schwelle) -> den Langsam-Zaehler zuruecksetzen, damit nur
-                    # AUFEINANDERFOLGENDE langsame Frames zaehlen.
-                    self.slow_frames = 0
-            # While collecting, emit None.
-            return {self.outputSignal: None}
-        else:
-            # If no hand detected, increment lost counter.
-            self.lost_counter += 1
-            if self.lost_counter > self.max_lost and self.is_moving:
-                # End the gesture if lost too many frames.
-                self.is_moving = False
-                # Langsam-Zaehler zuruecksetzen -- die Geste endet hier ueber den
-                # Hand-Verlust, nicht ueber langsames Werden.
-                self.slow_frames = 0
-                if len(self.buffer) >= self.min_steps:
-                    trajectory = self.process_trajectory()
-                    # Puffer nach dem Emittieren leeren (wie oben), damit die
-                    # naechste Geste nicht mit Resten der vorherigen startet.
-                    self.buffer.clear()
-                    return {self.outputSignal: trajectory}
-                else:
-                    self.buffer.clear()
-            # Emit None.
-            return {self.outputSignal: None}
 
-    def process_trajectory(self):
+        segment = self.segmenter.feed(pos)
+        if segment is not None:
+            # Eine Geste ist fertig -> in das Trainings-Feature-Format bringen.
+            return {self.outputSignal: self.process_trajectory(segment)}
+        # Keine fertige Geste in diesem Frame.
+        return {self.outputSignal: None}
+
+    def process_trajectory(self, segment):
         """
         Wandelt die gesammelten Rohpunkte in GENAU das Feature-Format um, mit dem
         der HMM-Klassifikator trainiert wurde: Spalten ``(x, y, velocity)``, also
@@ -337,19 +281,10 @@ class Preprocessor(Module):
         # So bekommt das Modell live die gleichen Zahlen wie beim Lernen.
         from GestureRecognition.labeling import _to_features
 
-        # 1) Aus den gesammelten Punkten eine Liste von (x, y) machen.
-        trajectory = np.array(list(self.buffer), dtype=float)
-
-        # 2) In das fertige Format bringen: gleich viele Punkte + normalisieren
-        #    + Geschwindigkeit -> (x, y, geschwindigkeit) pro Punkt.
-        features = _to_features(trajectory)
-
-        # 4) Puffer leeren, damit die naechste Geste sauber von vorne beginnt.
-        self.buffer.clear()
-
-        # Ergebnis: Array der Form (N, 3) mit Spalten (x, y, velocity) --
-        # identisch zum Trainingsformat, das der HMMClassifier erwartet.
-        return features
+        # Das fertige Roh-Segment (vom gemeinsamen GestureSegmenter) in das
+        # Trainings-Format bringen: gleich viele Punkte + normalisieren
+        # + Geschwindigkeit -> (x, y, geschwindigkeit) pro Punkt.
+        return _to_features(np.asarray(segment, dtype=float))
 
     def stop(self, data):
         """
