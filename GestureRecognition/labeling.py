@@ -7,7 +7,7 @@ import pickle
 import logging
 import numpy as np
 from pathlib import Path
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from sklearn.model_selection import train_test_split
 
 logger = logging.getLogger(__name__)
@@ -224,6 +224,164 @@ def _add_velocity(traj: np.ndarray) -> np.ndarray:
     return np.hstack([traj, velocity])
 
 
+# ---------------------------------------------------------------------------
+# Gemeinsame Gesten-Segmentierung fuer Training UND Live (Issue #58)
+#
+# Problem vorher: Das Training nahm ueber _extract_trajectory ALLE Frames mit
+# Hand (inklusive "Hand zum Startpunkt fuehren"), der Live-Preprocessor dagegen
+# schnitt per Geschwindigkeits-Hysterese nur die eigentliche Bewegung aus.
+# Das Modell lernte also andere Sequenzen, als es live bewerten musste.
+#
+# Loesung: Die Segmentierungs-Logik lebt jetzt genau EINMAL -- hier, als
+# GestureSegmenter. Der Live-Preprocessor fuettert ihn Frame fuer Frame, der
+# Datensatzbau laesst ganze Aufnahmen ueber segment_trajectory() durchlaufen.
+# Beide Pfade koennen dadurch nicht mehr auseinanderlaufen.
+# ---------------------------------------------------------------------------
+
+# Standardwerte identisch zu config.yml -> Abschnitt "preprocessor".
+SEGMENTATION_DEFAULTS = {
+    "min_speed": 0.005,   # Start-Schwelle: ab dieser Bewegung beginnt die Geste
+    "reset_speed": 0.001, # Stopp-Schwelle: darunter gilt der Finger als langsam
+    "stop_hold": 4,       # so viele langsame Frames am Stueck beenden die Geste
+    "max_lost": 10,       # so viele Frames ohne Hand beenden die Geste
+    "min_steps": 15,      # kuerzere Segmente werden verworfen
+    "buffer_size": 250,   # maximale Punktzahl einer Geste (wie Live-Puffer)
+}
+
+
+class GestureSegmenter:
+    """
+    Schneidet aus einem Strom von Fingerpositionen die aktive Geste aus.
+
+    Die Logik ist exakt die des Live-``Preprocessor``:
+
+    - Ueberschreitet die Frame-zu-Frame-Bewegung ``min_speed``, beginnt die
+      Geste. Der Puffer wird dabei geleert (nur die letzten zwei Punkte bleiben
+      als Startpunkt) -- die Anfahrt zur Startposition gehoert nicht zur Geste.
+    - Faellt die Bewegung unter ``reset_speed``, zaehlt ein Entprell-Zaehler:
+      erst ``stop_hold`` langsame Frames AM STUECK beenden die Geste (kurzes
+      Abbremsen an Ecken von M/W/Z schneidet sie nicht mehr ab).
+    - Ist die Hand laenger als ``max_lost`` Frames weg, endet die Geste ebenfalls.
+    - Segmente mit weniger als ``min_steps`` Punkten werden verworfen.
+
+    Benutzung: pro Frame :meth:`feed` mit der Position (oder ``None`` fuer
+    "keine Hand") aufrufen; am Ende eines aufgezeichneten Streams
+    :meth:`finish`. Beide geben ein fertiges Segment (Roh-Punkte, Form (N, 2))
+    zurueck oder ``None``.
+    """
+
+    def __init__(
+        self,
+        min_speed: float = SEGMENTATION_DEFAULTS["min_speed"],
+        reset_speed: float = SEGMENTATION_DEFAULTS["reset_speed"],
+        stop_hold: int = SEGMENTATION_DEFAULTS["stop_hold"],
+        max_lost: int = SEGMENTATION_DEFAULTS["max_lost"],
+        min_steps: int = SEGMENTATION_DEFAULTS["min_steps"],
+        buffer_size: int = SEGMENTATION_DEFAULTS["buffer_size"],
+    ):
+        self.min_speed = min_speed
+        self.reset_speed = reset_speed
+        self.stop_hold = stop_hold
+        self.max_lost = max_lost
+        self.min_steps = min_steps
+        self.buffer = deque(maxlen=buffer_size)
+        self.lost_counter = 0
+        self.is_moving = False
+        self.slow_frames = 0
+
+    def _emit(self) -> np.ndarray | None:
+        """Beendet die aktuelle Geste und gibt sie zurueck (oder None, wenn zu kurz)."""
+        self.is_moving = False
+        self.slow_frames = 0
+        segment = None
+        if len(self.buffer) >= self.min_steps:
+            segment = np.array(list(self.buffer), dtype=float)
+        self.buffer.clear()
+        return segment
+
+    def feed(self, pos) -> np.ndarray | None:
+        """
+        Verarbeitet einen Frame.
+
+        Parameters
+        ----------
+        pos : array-like of shape (2,) or None
+            Fingerposition dieses Frames, ``None`` wenn keine Hand erkannt wurde.
+
+        Returns
+        -------
+        np.ndarray or None
+            Ein fertiges Gesten-Segment (Form (N, 2)), sobald eine Geste endet,
+            sonst ``None``.
+        """
+        if pos is not None:
+            pos = np.asarray(pos, dtype=float)
+            self.buffer.append(pos)
+            self.lost_counter = 0
+            if len(self.buffer) > 1:
+                diff = np.linalg.norm(self.buffer[-1] - self.buffer[-2])
+                if not self.is_moving and diff > self.min_speed:
+                    # Gestenstart: Anfahrt verwerfen, die letzten zwei Punkte
+                    # (aus denen diff berechnet wurde) sind der Startpunkt.
+                    self.is_moving = True
+                    self.slow_frames = 0
+                    start_points = list(self.buffer)[-2:]
+                    self.buffer.clear()
+                    self.buffer.extend(start_points)
+                elif self.is_moving and diff < self.reset_speed:
+                    self.slow_frames += 1
+                    if self.slow_frames >= self.stop_hold:
+                        return self._emit()
+                elif self.is_moving:
+                    self.slow_frames = 0
+            return None
+
+        # Keine Hand in diesem Frame.
+        self.lost_counter += 1
+        if self.lost_counter > self.max_lost and self.is_moving:
+            return self._emit()
+        return None
+
+    def finish(self) -> np.ndarray | None:
+        """
+        Schliesst den Strom ab (Ende einer Aufnahme = Hand endgueltig weg).
+
+        Eine noch laufende Geste wird beendet und zurueckgegeben -- genau so,
+        als waere die Hand aus dem Bild genommen worden.
+        """
+        if self.is_moving:
+            return self._emit()
+        self.buffer.clear()
+        return None
+
+
+def segment_trajectory(traj: np.ndarray, **params) -> list[np.ndarray]:
+    """
+    Wendet die Live-Segmentierung offline auf eine komplette Trajektorie an.
+
+    ``traj`` ist eine Roh-Trajektorie der Form (N, 2), wie sie
+    :func:`_extract_trajectory` liefert; ``nan``-Zeilen (Hand kurz verloren)
+    werden wie "keine Hand" behandelt -- exakt wie im Live-Betrieb.
+
+    Returns
+    -------
+    list of np.ndarray
+        Alle Gesten-Segmente (je Form (M, 2)), die die Live-Logik aus dieser
+        Aufnahme herausgeschnitten haette.
+    """
+    segmenter = GestureSegmenter(**params)
+    segments = []
+    for row in np.asarray(traj, dtype=float):
+        pos = None if np.isnan(row).any() else row
+        segment = segmenter.feed(pos)
+        if segment is not None:
+            segments.append(segment)
+    tail = segmenter.finish()
+    if tail is not None:
+        segments.append(tail)
+    return segments
+
+
 def clean_recordings(
     recordings_dir: str | Path,
     finger_idx: int = 8,
@@ -275,6 +433,20 @@ def clean_recordings(
                 stats["zu kurz"] += 1
                 logger.info("[%s] %s verworfen: zu kurz (%s Frames)", label, pkl_file.name, len(traj) if traj is not None else 0)
                 continue
+
+            # Dieselbe Segmentierung wie der Live-Preprocessor (Issue #58):
+            # Anfahrt/Stillstand abschneiden, nur die eigentliche Geste behalten.
+            # Bei mehreren Segmenten (z. B. Wackler vor dem Buchstaben) nehmen
+            # wir das laengste -- das ist der Buchstabe selbst.
+            segments = segment_trajectory(traj, min_steps=min_length)
+            if not segments:
+                stats["keine Bewegung"] += 1
+                logger.info(
+                    "[%s] %s verworfen: Live-Segmentierung findet keine Geste",
+                    label, pkl_file.name,
+                )
+                continue
+            traj = max(segments, key=len)
 
             if _is_outlier(traj, max_jump):
                 stats["Tracking-Sprung"] += 1
