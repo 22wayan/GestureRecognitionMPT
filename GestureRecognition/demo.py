@@ -3,6 +3,12 @@ from GestureRecognition.modules import *
 import argparse
 
 def run(parser: argparse.ArgumentParser):
+    """Stellt die Modul-Pipeline zusammen und startet die SignalHub-Engine.
+
+    Die Reihenfolge der Module entspricht dem Datenfluss: Webcam liefert das
+    Bild, der HandDetector findet die Hand, der TrailMarker zeichnet die Spur,
+    der Preprocessor schneidet die Geste aus und der HMMModule klassifiziert sie.
+    """
     parser.add_argument("--mode", action="store", default="none")
     parser.add_argument("--recorder.file", action="store")
     parser.add_argument("--engine.singlestep", action="store_true", default=False)

@@ -35,14 +35,18 @@ FLIP = True             # wie config.yml (webcam.flip: True)
 
 
 def sanitize(name: str) -> str:
+    """Entfernt Zeichen, die im Dateinamen Probleme machen (Leerzeichen, Slashes)."""
     for c in " /:\\":
         name = name.replace(c, "")
     return name
 
 
 def canonical_person(person: str) -> str:
-    # Falls es schon Aufnahmen dieser Person gibt (egal welche Schreibweise),
-    # deren exakte Schreibweise uebernehmen -> einheitliche Dateinamen.
+    """Uebernimmt die Schreibweise, mit der diese Person schon aufgenommen hat.
+
+    Falls es schon Aufnahmen dieser Person gibt (egal welche Schreibweise),
+    deren exakte Schreibweise uebernehmen -> einheitliche Dateinamen.
+    """
     pl = person.lower()
     if REC_DIR.exists():
         for d in sorted(REC_DIR.glob("*")):
@@ -54,8 +58,11 @@ def canonical_person(person: str) -> str:
 
 
 def person_takes(letter: str, person: str) -> int:
-    # Groß-/Kleinschreibung des Namens ignorieren, damit "azad" auch die
-    # bereits vorhandenen "Azad"-Aufnahmen findet (Resume funktioniert sonst nicht).
+    """Zaehlt, wie viele Takes diese Person fuer ein Zeichen schon hat.
+
+    Gross-/Kleinschreibung des Namens wird ignoriert, damit "azad" auch die
+    bereits vorhandenen "Azad"-Aufnahmen findet (Resume funktioniert sonst nicht).
+    """
     d = REC_DIR / letter
     if not d.exists():
         return 0
@@ -69,7 +76,7 @@ def person_takes(letter: str, person: str) -> int:
 
 
 def newest_person_file(person: str):
-    # Die zuletzt gespeicherte Aufnahme dieser Person finden (fuer "Rueckgaengig").
+    """Findet die zuletzt gespeicherte Aufnahme dieser Person (fuer "Rueckgaengig")."""
     pl = person.lower()
     newest, newest_t = None, -1.0
     if REC_DIR.exists():
@@ -84,7 +91,7 @@ def newest_person_file(person: str):
 
 
 def first_incomplete_index(person, symbols, times):
-    # Sucht das erste Zeichen, von dem noch nicht genug Aufnahmen da sind.
+    """Sucht das erste Zeichen, von dem noch nicht genug Aufnahmen da sind."""
     for i, L in enumerate(symbols):
         if person_takes(L, person) < times:
             return i
@@ -92,6 +99,7 @@ def first_incomplete_index(person, symbols, times):
 
 
 def next_take_path(letter: str, person: str) -> Path:
+    """Findet den naechsten freien Dateinamen, damit nichts ueberschrieben wird."""
     d = REC_DIR / letter
     d.mkdir(parents=True, exist_ok=True)
     n = 1
@@ -101,6 +109,7 @@ def next_take_path(letter: str, person: str) -> Path:
 
 
 def make_detector():
+    """Laedt den MediaPipe-Handdetektor (gleiches Modell wie der Live-Modus)."""
     opts = vision.HandLandmarkerOptions(
         base_options=mp_python.BaseOptions(model_asset_path=str(MODEL)),
         running_mode=vision.RunningMode.IMAGE,
@@ -113,6 +122,7 @@ def make_detector():
 
 
 def put_lines(frame, lines, org=(24, 46), scale=0.9, dy=40):
+    """Schreibt mehrere Textzeilen mit schwarzem Rand ins Bild (gut lesbar)."""
     x, y = org
     for i, (text, color) in enumerate(lines):
         pos = (x, y + i * dy)

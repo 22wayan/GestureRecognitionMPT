@@ -11,6 +11,13 @@ mp_hand = mp.tasks.vision.HandLandmarksConnections
 
 
 def draw_hand_landmarks(hand_landmarks, galy: GALY):
+    """
+    Zeichnet die 21 Landmarken einer Hand als farbiges Skelett.
+
+    Jeder Finger bekommt eine eigene Farbe, damit man im Kamerabild sofort
+    sieht, welche Punkte MediaPipe erkannt hat. Die Verbindungslinien
+    (welcher Punkt mit welchem verbunden ist) kommen fertig aus MediaPipe.
+    """
     lm = {
         "thumb":         {"color": bgr("#0000FF")},
         "index_finger":  {"color": bgr("#00FF00")},
@@ -51,43 +58,13 @@ class HandDetector(Module):
 
     def __init__(self, outputSignal="detector"):
         """
-        Konstruktor des Moduls.
+        Meldet das Modul beim SignalHub-Framework an.
 
-        Ziel ist es, das Modul beim Framework korrekt zu registrieren.
-
-        Hinweise
-        --------
-        - Ein Modul muss definieren, **welche Signale es empfangen möchte**.
-        - Diese werden über ``inputSignals`` angegeben.
-        - Nur Signale, die hier subscribed werden, erscheinen später im
-          ``data`` Dictionary der Methoden :meth:`start` und :meth:`step`.
-
-        Für dieses Modul werden unter anderem folgende Signale benötigt:
-
-        - ``config`` : Systemkonfiguration
-        - ``webcam`` : aktuelles Kamerabild
-
-        Zusätzlich muss ein **Output-Schema** definiert werden.
-
-        Output Schema
-        -------------
-        Das Modul erzeugt ein Signal mit dem Namen ``detector``.
-
-        Dieses Signal enthält das Ergebnis der Handdetektion, welches
-        beispielsweise Informationen über erkannte Hände und Landmarken
-        enthalten kann.
-
-        Beispiel:
-
-        ``outputSchema={"type": "object", "properties": {outputSignal: {}}}``
-
-        .. note::
-           Die Basisklasse :class:`Module` erwartet beim Aufruf von
-           ``super().__init__`` unter anderem:
-
-           - ``inputSignals``
-           - ``outputSchema``
-           - ``name`` des Moduls
+        Wir abonnieren zwei Signale: ``config`` (unsere Einstellungen aus der
+        config.yml) und ``webcam`` (das aktuelle Kamerabild). Nur abonnierte
+        Signale tauchen später im ``data``-Dictionary von :meth:`start` und
+        :meth:`step` auf. Als Ausgabe melden wir das Signal ``detector`` an,
+        in dem die erkannten Hände landen.
 
         Parameters
         ----------
@@ -133,7 +110,8 @@ class HandDetector(Module):
             Ein leeres Dictionary.
         """
         model_path = Path(__file__).resolve().parents[2] / "hand_landmarker.task"
-        # get_nested_key(key_path, data, default) -- key path uses "." as separator
+        # get_nested_key("a.b.c", data, default) liest verschachtelte Werte aus
+        # der Konfiguration; fehlt der Eintrag, gilt der Default.
         detection_confidence = get_nested_key(
             "config.hand_detection_confidence",
             data,

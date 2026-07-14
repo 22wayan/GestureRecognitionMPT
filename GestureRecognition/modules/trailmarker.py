@@ -16,37 +16,12 @@ class TrailMarker(Module):
 
     def __init__(self, outputSignal="trailmarker"):
         """
-        Konstruktor des Moduls.
+        Meldet das Modul beim SignalHub-Framework an.
 
-        Ziel ist es, das Modul beim Framework korrekt zu registrieren.
-
-        Hinweise
-        --------
-        - Ein Modul muss definieren, **welche Signale es empfangen möchte**.
-        - Diese werden über ``inputSignals`` angegeben.
-        - Nur Signale, die hier subscribed werden, erscheinen später im
-          ``data`` Dictionary der Methoden :meth:`start` und :meth:`step`.
-
-        Für dieses Modul werden unter anderem folgende Signale benötigt:
-
-        - ``config`` : Systemkonfiguration
-        - ``detector`` : Ergebnisse der Handdetektion
-
-        Zusätzlich muss ein **Output-Schema** definiert werden.
-
-        Output Schema
-        -------------
-        Da dieses Modul keine eigenen Daten erzeugt, reicht beispielsweise:
-
-        ``outputSchema={"type": "object", "properties": {outputSignal: {}}}``
-
-        .. note::
-           Die Basisklasse :class:`Module` erwartet beim Aufruf von
-           ``super().__init__`` unter anderem:
-
-           - ``inputSignals``
-           - ``outputSchema``
-           - ``name`` des Moduls
+        Wir abonnieren ``config`` (Einstellungen aus der config.yml) und
+        ``detector`` (die erkannten Hände aus dem HandDetector). Eigene Daten
+        gibt das Modul nicht weiter -- es zeichnet nur die Spur ins Bild,
+        deshalb bleibt das Output-Schema praktisch leer.
 
         Parameters
         ----------
@@ -61,34 +36,11 @@ class TrailMarker(Module):
 
     def start(self, data):
         """
-        Initialisierung des Modulzustands.
+        Initialisierung des Modulzustands (läuft einmal beim Start).
 
-        Diese Methode wird einmal beim Start des Moduls ausgeführt.
-
-        Ziel ist es, alle Variablen vorzubereiten, die während der
-        Laufzeit des Moduls benötigt werden.
-
-        Hinweise
-        --------
-        - Lese benötigte Parameter aus der Konfiguration.
-        - Bestimme beispielsweise, welcher Finger verfolgt werden soll.
-        - Lege eine Datenstruktur an, in der mehrere vergangene
-          Fingerpositionen gespeichert werden können,
-          z.B. :class:`collections.deque` mit einer maximalen Größe.
-        - Diese Historie wird später verwendet, um eine Spur zu zeichnen.
-        - Speichere aus der Konfiguration weitere benötigte Parameter,
-          z.B. Finger-Index, maximale Anzahl verlorener Frames oder
-          Webcam-Parameter.
-        - Für den Zugriff auf verschachtelte Konfigurationswerte kann
-          :meth:`get_nested_key` verwendet werden.
-
-        .. tip::
-           Eine ``deque`` ist ideal für Trajektorien,
-           da sie effizient alte Punkte entfernt.
-
-        .. note::
-           Initialisiere hier nur Zustände und Parameter,
-           keine eigentliche Verarbeitung.
+        Hier lesen wir unsere Parameter aus der Konfiguration (welcher
+        Finger verfolgt wird, wie lang die Spur sein darf) und legen die
+        Datenstrukturen an, die wir über die Frames hinweg brauchen.
 
         Parameters
         ----------
@@ -101,57 +53,30 @@ class TrailMarker(Module):
         dict
             Ein leeres Dictionary.
         """
-        # Read configuration values using get_nested_key
+        # Unsere Einstellungen aus der config.yml holen.
         self.finger_idx = get_nested_key("config.trailmarker.finger_idx", data)
         self.max_lost = get_nested_key("config.trailmarker.max_lost", data)
         self.max_trail_length = get_nested_key("config.trailmarker.max_trail_length", data)
         self.webcam_width = get_nested_key("config.webcam.width", data)
         self.webcam_height = get_nested_key("config.webcam.height", data)
-        
-        # Use collections.deque for trail history with fixed maximum length
-        # Choice of data structure: deque is efficient for FIFO operations with max length,
-        # automatically removing old points when full, suitable for trajectories.
+
+        # Eine deque mit fester Maximallaenge wirft alte Punkte automatisch
+        # raus -- so waechst die Spur nie unendlich.
         self.trail = deque(maxlen=self.max_trail_length)
-        
-        # Initialize lost counter for handling tracking loss
+
+        # Zaehlt, in wie vielen Frames hintereinander keine Hand zu sehen war.
         self.lost_counter = 0
-        
+
         return {}
 
     def step(self, data):
         """
         Verarbeitung eines einzelnen Frames.
 
-        Ziel ist es, die aktuelle Position eines Fingers zu bestimmen,
-        diese Position in einer Trajektorie zu speichern und daraus
-        eine visuelle Spur zu erzeugen.
-
-        Hinweise
-        --------
-        - Greife auf das ``detector`` Signal zu, um erkannte Hände und
-          deren Landmarken zu erhalten.
-        - Falls keine Hand erkannt wurde, kann beispielsweise ein Zähler
-          für verlorene Frames erhöht werden.
-        - Wird eine Hand erkannt, kann die Landmarke des gewünschten
-          Fingers extrahiert werden.
-        - Die Position kann zur bestehenden Trajektorie hinzugefügt werden.
-        - Zwischen aufeinanderfolgenden Punkten können Linien gezeichnet
-          werden, um eine Spur darzustellen.
-        - Für die Visualisierung kann :meth:`line` der :class:`GALY`
-          verwendet werden.
-
-        .. tip::
-          Typischer Ablauf:
-           1. Landmark extrahieren
-           2. Punkt speichern
-           3. Trajektorie aktualisieren
-           4. Linien zwischen Punkten zeichnen
-
-        .. warning::
-            Achte darauf, dass:
-              - keine leeren Landmark-Daten verarbeitet werden
-              - die Trajektorie nicht unendlich wächst
-              - verlorene Frames sinnvoll behandelt werden
+        Wir holen uns die Position des verfolgten Fingers aus dem
+        ``detector``-Signal, hängen sie an die Spur an und zeichnen die
+        Spur als Linienzug ins Kamerabild. Ist keine Hand zu sehen,
+        zählen wir nur den Verlust-Zähler hoch -- die Spur bleibt stehen.
 
         Parameters
         ----------
@@ -164,12 +89,7 @@ class TrailMarker(Module):
         Returns
         -------
         dict
-            Um die Zeichenoperationen auszuführen, sollte ein
-            :class:`GALY` Objekt zurückgegeben werden.
-
-            Beispiel:
-
-            ``return { ..., "galy": galy}``
+            ``galy`` : Visualisierungsobjekt mit der gezeichneten Spur.
         """
         galy = GALY()
         # Wir zeichnen die Spur auf einen eigenen Layer namens "trail".
@@ -184,9 +104,10 @@ class TrailMarker(Module):
 
         detector = data.get('detector', {})
         hands = detector.get('hands', [])
-        
+
         if hands:
-            hand = hands[0]  # Assume first hand
+            # Wir nehmen immer die erste erkannte Hand.
+            hand = hands[0]
             landmarks = hand.get('landmarks', [])
             if len(landmarks) > self.finger_idx:
                 # War die Hand laenger als max_lost weg, ist das eine NEUE Geste:
@@ -194,17 +115,12 @@ class TrailMarker(Module):
                 # bevor die neue beginnt.
                 if self.lost_counter > self.max_lost:
                     self.trail.clear()
-                # Extract current finger position
                 pos = (landmarks[self.finger_idx]['x'], landmarks[self.finger_idx]['y'])
-                # Add to deque
                 self.trail.append(pos)
-                # Reset lost counter
                 self.lost_counter = 0
             else:
-                # No valid landmark, increment lost counter
                 self.lost_counter += 1
         else:
-            # No hand detected, increment lost counter
             self.lost_counter += 1
 
         # Die Spur bleibt absichtlich stehen, wenn die Hand das Bild verlaesst --
@@ -212,36 +128,21 @@ class TrailMarker(Module):
         # beurteilen, ob die Aufnahme gut war. Zurueckgesetzt wird erst, wenn eine
         # neue Geste beginnt (siehe oben: Hand kommt nach >max_lost Frames zurueck).
 
-        # Draw lines between consecutive points
+        # Linien zwischen den gespeicherten Punkten zeichnen. Aeltere Abschnitte
+        # werden dunkler (Blau -> Weiss), damit man die Richtung der Bewegung sieht.
         if len(self.trail) > 1:
             for i in range(1, len(self.trail)):
                 start = self.trail[i-1]
                 end = self.trail[i]
-                # Optional fade effect: older points are more transparent (lighter color)
-                alpha = i / len(self.trail)  # From 0 (oldest) to 1 (newest)
-                color = (int(255 * alpha), int(255 * alpha), 255)  # Blue to white fade
+                alpha = i / len(self.trail)  # 0 = aeltester Punkt, 1 = neuester
+                color = (int(255 * alpha), int(255 * alpha), 255)
                 galy.line(start, end, color, 2)
-        
+
         return {"galy": galy}
 
     def stop(self, data):
         """
-        Wird aufgerufen, wenn das Modul beendet wird.
-
-        Ziel ist es, bei Bedarf Ressourcen freizugeben oder interne
-        Zustände zurückzusetzen.
-
-        Hinweise
-        --------
-        - In vielen Fällen ist keine spezielle Bereinigung notwendig.
-
-        .. note::
-           Diese Methode ist optional, kann aber sinnvoll sein,
-           wenn Zustände explizit zurückgesetzt werden sollen.
-
-        Parameters
-        ----------
-        data : dict
-            Letzte übergebene Daten des Frameworks.
+        Wird beim Beenden aufgerufen. Wir halten keine externen Ressourcen
+        (Dateien, Kameras, Modelle), deshalb gibt es hier nichts aufzuräumen.
         """
         pass

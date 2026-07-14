@@ -15,42 +15,13 @@ class Preprocessor(Module):
 
     def __init__(self, outputSignal="preprocessor"):
         """
-        Konstruktor des Moduls.
+        Meldet das Modul beim SignalHub-Framework an.
 
-        Ziel ist es, das Modul beim Framework korrekt zu registrieren.
-
-        Hinweise
-        --------
-        - Ein Modul muss definieren, **welche Signale es empfangen möchte**.
-        - Diese werden über ``inputSignals`` angegeben.
-        - Nur Signale, die hier subscribed werden, erscheinen später im
-          ``data`` Dictionary der Methoden :meth:`start` und :meth:`step`.
-
-        Für dieses Modul werden unter anderem folgende Signale benötigt:
-
-        - ``config`` : Systemkonfiguration
-        - ``detector`` : Ergebnisse der Handdetektion
-
-        Zusätzlich muss ein **Output-Schema** definiert werden.
-
-        Output Schema
-        -------------
-        Das Modul erzeugt ein Signal mit dem Namen ``preprocessor``.
-
-        Dieses Signal enthält entweder eine normalisierte Trajektorie
-        oder ``None``, falls noch nicht genügend Daten gesammelt wurden.
-
-        Beispiel:
-
-        ``outputSchema={"type": "object", "properties": {outputSignal: {}}}``
-
-        .. note::
-           Die Basisklasse :class:`Module` erwartet beim Aufruf von
-           ``super().__init__`` unter anderem:
-
-           - ``inputSignals``
-           - ``outputSchema``
-           - ``name`` des Moduls
+        Wir abonnieren ``config`` (Einstellungen aus der config.yml) und
+        ``detector`` (die erkannten Hände aus dem HandDetector). Als Ausgabe
+        melden wir das Signal ``preprocessor`` an: Dort liegt entweder eine
+        fertige, normalisierte Trajektorie oder ``None``, solange die Geste
+        noch nicht abgeschlossen ist.
 
         Parameters
         ----------
@@ -66,33 +37,11 @@ class Preprocessor(Module):
 
     def start(self, data):
         """
-        Initialisierung des Modulzustands.
+        Initialisierung des Modulzustands (läuft einmal beim Start).
 
-        Diese Methode wird einmal beim Start des Moduls ausgeführt.
-
-        Ziel ist es, alle benötigten Parameter aus der Konfiguration zu
-        lesen und interne Datenstrukturen vorzubereiten.
-
-        Hinweise
-        --------
-        - Lese relevante Parameter aus der Konfiguration, z.B.
-          den zu verfolgenden Finger.
-        - Lege eine Datenstruktur an, um mehrere vergangene
-          Fingerpositionen zu speichern, z.B. :class:`collections.deque`
-          mit einer maximalen Größe.
-        - Speichere außerdem Parameter wie die maximale Anzahl
-          verlorener Frames oder die minimale Anzahl benötigter Punkte.
-        - Zum Zugriff auf verschachtelte Konfigurationswerte kann
-          :meth:`get_nested_key` verwendet werden.
-
-        .. tip::
-            Eine ``deque`` mit fester Länge ist ideal für Trajektorien,
-            da alte Punkte automatisch verworfen werden.
-
-        .. note::
-            Trenne klar zwischen:
-              - Initialisierung von Parametern (``start``)
-              - Verarbeitung von Daten (``step``)
+        Hier lesen wir alle Parameter für die Gesten-Segmentierung aus der
+        Konfiguration und bauen daraus den gemeinsamen
+        :class:`~GestureRecognition.labeling.GestureSegmenter`.
 
         Parameters
         ----------
@@ -105,24 +54,22 @@ class Preprocessor(Module):
         dict
             Ein leeres Dictionary.
         """
-        # As a beginner student programmer, I need to initialize the module's state here.
-        # First, I read the configuration values from the config signal.
-        # I use get_nested_key to access nested config values safely.
         # finger_idx legt fest, welches Hand-Landmark verfolgt wird (Default 8 = Zeigefingerspitze).
         # WICHTIG: Der Schluessel heisst finger_idx -- genau wie in config.yml, im Training
         # (labeling.py) und im TrailMarker. Nur mit exakt gleichem Schluessel verfolgen Training
         # und Live denselben Finger; ein abweichender Name wuerde still auf den Default zurueckfallen.
         self.finger_idx = get_nested_key("config.preprocessor.finger_idx", data, 8)
-        # buffer_size is the maximum number of points to store in the trajectory buffer.
+        # Maximale Punktzahl im Puffer -- muss gross genug fuer langsame/grosse Buchstaben sein.
         self.buffer_size = get_nested_key("config.preprocessor.buffer_size", data, 30)
-        # min_steps is the minimum number of points needed for a valid trajectory.
+        # Weniger Punkte als min_steps gelten nicht als richtige Geste (nur Zittern o.ae.).
         self.min_steps = get_nested_key("config.preprocessor.min_steps", data, 10)
-        # max_lost is the maximum number of consecutive lost frames before ending the gesture.
+        # Nach so vielen Frames ohne Hand gilt die Geste als beendet.
         self.max_lost = get_nested_key("config.preprocessor.max_lost", data, 5)
-        # min_speed_corner and reset_speed_corner are for hysteresis-based motion detection.
-        # min_speed_corner is the threshold to start collecting when movement begins.
+        # Hysterese fuer die Bewegungs-Erkennung: Sammeln startet erst ueber
+        # min_speed_corner und endet erst unter reset_speed_corner. Die Start-
+        # Schwelle liegt bewusst UEBER der Stopp-Schwelle, damit die Erkennung
+        # nicht bei jeder kleinen Tempo-Schwankung an- und ausgeht.
         self.min_speed_corner = get_nested_key("config.preprocessor.min_speed_corner", data, 0.01)
-        # reset_speed_corner is the threshold to stop collecting when movement slows down.
         self.reset_speed_corner = get_nested_key("config.preprocessor.reset_speed_corner", data, 0.005)
         # stop_hold: Wie viele langsame Frames HINTEREINANDER noetig sind, damit eine
         # Geste als beendet gilt (sogenanntes "Entprellen"). Ein einzelner langsamer
@@ -145,48 +92,17 @@ class Preprocessor(Module):
             buffer_size=self.buffer_size,
         )
 
-        # Return an empty dict as required.
         return {}
 
     def step(self, data):
         """
         Verarbeitung eines einzelnen Frames.
 
-        Ziel ist es, eine Fingerposition aus den erkannten Landmarken
-        zu extrahieren und diese in einer Trajektorie zu speichern.
-
-        Hinweise
-        --------
-        - Greife auf das ``detector`` Signal zu, um erkannte
-          Handlandmarks zu erhalten.
-        - Falls keine Hand erkannt wurde, sollte ein interner
-          Zähler für verlorene Frames erhöht werden.
-        - Wird eine Hand erkannt, kann die Landmarke des gewünschten
-          Fingers extrahiert werden.
-        - Die Position dieses Fingers kann anschließend in einer
-          Trajektorie gespeichert werden.
-        - Sobald genügend Punkte gesammelt wurden, kann die
-          Trajektorie weiterverarbeitet werden.
-
-        Mögliche Verarbeitungsschritte:
-
-        - Umwandlung der gespeicherten Punkte in ein
-          :class:`numpy.ndarray`
-        - Berechnung eines Zentrums der Trajektorie
-        - Skalierung oder Normalisierung der Punkte
-
-        .. tip::
-            Arbeite schrittweise:
-              1. Prüfen, ob Landmarken vorhanden sind
-              2. Fingerposition extrahieren
-              3. In Trajektorie speichern
-              4. Optional normalisieren
-
-        .. warning::
-            Achte darauf, dass:
-              - genügend Punkte vorhanden sind
-              - keine fehlerhaften Frames verarbeitet werden
-              - verlorene Frames sinnvoll behandelt werden
+        Wir bestimmen die aktuelle Fingerposition und geben sie an den
+        gemeinsamen :class:`GestureSegmenter` weiter. Der entscheidet, wann
+        eine Geste anfängt und aufhört. Sobald er ein fertiges Segment
+        liefert, wandeln wir es in das Trainings-Feature-Format um und geben
+        es als Signal weiter -- in allen anderen Frames geben wir ``None``.
 
         Parameters
         ----------
@@ -199,12 +115,8 @@ class Preprocessor(Module):
         Returns
         -------
         dict
-            Gibt entweder ``None`` oder eine normalisierte Trajektorie
-            zurück.
-
-            Beispiel:
-
-            ``return {outputSignal: trajectory}``
+            ``{outputSignal: trajectory}`` mit der fertigen Trajektorie
+            oder ``{outputSignal: None}``, solange keine Geste fertig ist.
         """
         # Fingerposition dieses Frames bestimmen (oder None = keine Hand) und an
         # die gemeinsame Segmentierungs-Logik weiterreichen. Start/Stopp/Entprellen/
@@ -213,7 +125,8 @@ class Preprocessor(Module):
         detector = data.get('detector')
         pos = None
         if detector and detector.get('hands'):
-            hand = detector['hands'][0]  # Assume the first hand.
+            # Wir nehmen immer die erste erkannte Hand.
+            hand = detector['hands'][0]
             landmark = hand['landmarks'][self.finger_idx]
             pos = np.array([landmark['x'], landmark['y']])
 
@@ -230,8 +143,8 @@ class Preprocessor(Module):
         der HMM-Klassifikator trainiert wurde: Spalten ``(x, y, velocity)``, also
         3 Zahlen (Features) pro Frame.
 
-        Warum das so wichtig ist (fuer Anfaenger erklaert)
-        --------------------------------------------------
+        Warum das so wichtig ist
+        ------------------------
         Der Klassifikator lernt beim Training ein eigenes Modell pro Geste. Jedes
         Modell merkt sich dabei, WIE VIELE Features eine Trajektorie pro Zeitschritt
         hat und wie diese Zahlen ungefaehr verteilt sind. In der Live-Erkennung
@@ -262,48 +175,19 @@ class Preprocessor(Module):
             Trajektorie der Form ``(N, 3)`` mit Spalten ``(x, y, velocity)`` --
             identisch zum Trainingsformat.
         """
-        # -------------------------------------------------------------------
-        # WICHTIG: Diese Umwandlung muss EXAKT das gleiche Ergebnis liefern wie
-        # die Trainings-Pipeline in labeling.py. Sonst bekommt der Klassifikator
-        # live ein anderes Datenformat als beim Training und kann die Geste nicht
-        # bewerten (Score -inf -> live kommt immer "?" heraus).
-        #
-        # Damit Live und Training NIE wieder auseinanderlaufen, benutzen wir hier
-        # GENAU DIESELBEN Funktionen, die auch beim Datensatz-Bau verwendet werden:
-        #   _normalize   -> zentrieren + auf Einheitskreis skalieren  (x, y)
-        #   _add_velocity -> Geschwindigkeit als 3. Spalte anhaengen   (x, y, velocity)
-        #
-        # Der Import steht bewusst HIER in der Methode (nicht oben in der Datei):
-        # So kann kein zirkulaerer Import beim Programmstart entstehen. Die Methode
-        # laeuft nur einmal pro fertiger Geste, der Import kostet also keine Zeit.
-        # -------------------------------------------------------------------
-        # Wir benutzen genau dieselbe Funktion wie das Training (_to_features).
-        # So bekommt das Modell live die gleichen Zahlen wie beim Lernen.
+        # Wir rufen exakt dieselbe Funktion auf wie der Datensatz-Bau beim
+        # Training (_to_features: Resampling + Normalisierung + Geschwindigkeit).
+        # So bekommt das Modell live garantiert dasselbe Format wie beim Lernen.
+        # Der Import steht bewusst HIER in der Methode (nicht oben in der Datei),
+        # damit beim Programmstart kein zirkulaerer Import entsteht -- die Methode
+        # laeuft nur einmal pro fertiger Geste, das kostet also keine Zeit.
         from GestureRecognition.labeling import _to_features
 
-        # Das fertige Roh-Segment (vom gemeinsamen GestureSegmenter) in das
-        # Trainings-Format bringen: gleich viele Punkte + normalisieren
-        # + Geschwindigkeit -> (x, y, geschwindigkeit) pro Punkt.
         return _to_features(np.asarray(segment, dtype=float))
 
     def stop(self, data):
         """
-        Wird aufgerufen, wenn das Modul beendet wird.
-
-        Ziel ist es, bei Bedarf interne Zustände zurückzusetzen
-        oder Ressourcen freizugeben.
-
-        Hinweise
-        --------
-        - In vielen Fällen ist keine spezielle Bereinigung notwendig.
-
-        .. note::
-           Diese Methode ist optional, kann aber relevant werden,
-           wenn interne Zustände explizit zurückgesetzt werden sollen.
-
-        Parameters
-        ----------
-        data : dict
-            Letzte übergebene Daten des Frameworks.
+        Wird beim Beenden aufgerufen. Wir halten keine externen Ressourcen,
+        deshalb gibt es hier nichts aufzuräumen.
         """
         pass

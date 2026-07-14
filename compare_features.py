@@ -82,6 +82,7 @@ def _featurize(raw_samples, feature_set):
 
 
 def _pack(pairs):
+    """Baut aus (traj, label)-Paaren die (X, y, lengths)-Struktur fuer den Classifier."""
     seqs = [traj for traj, _ in pairs]
     X = np.vstack(seqs)
     y = np.array([label for _, label in pairs])
@@ -90,6 +91,7 @@ def _pack(pairs):
 
 
 def _accuracy(y_true, y_pred) -> float:
+    """Anteil korrekter Vorhersagen (einfache Klassifikationsgenauigkeit)."""
     y_true = list(y_true)
     if not y_true:
         return 0.0
