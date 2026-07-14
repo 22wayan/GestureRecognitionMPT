@@ -1,5 +1,6 @@
 """
-End-to-End-Test der Live-Klassifikation (Aufgabe 5 / Issue #14).
+End-to-End-Test der Live-Klassifikation mit einer BEKANNTEN Person
+(Aufgabe 5 / Issue #14).
 
 Was hier getestet wird
 ----------------------
@@ -10,6 +11,12 @@ gespeist aus einer echten Aufnahme:
         -> Preprocessor.step()      (sammelt Trajektorie, _to_features -> (N,3))
         -> HMMModule.step()         (laedt data/hmm.pkl, decision_function, argmax)
         -> vorhergesagter Buchstabe
+
+Wichtig zur Einordnung (Issue #61): Die Testperson (yannik) steckt AUCH im
+Training von data/hmm.pkl. Dieser Test ist also ein Integrations-/
+Regressionstest der Pipeline -- KEIN Nachweis der Generalisierung auf fremde
+Personen. Den liefert test_end_to_end_unknown_person.py: dort wird ein Modell
+ohne die Testperson trainiert und das angezeigte Label (inklusive "?") bewertet.
 
 Die bestehenden Tests decken nur EINZELNE Bausteine ab
 (``test_live_segmentation`` stoppt beim Preprocessor, ``test_evaluate_classifier``
@@ -45,8 +52,9 @@ from GestureRecognition.modules.preprocessor import Preprocessor  # noqa: E402
 from GestureRecognition.modules.hiddenmarkov import HMMModule  # noqa: E402
 
 ALPHABET = [chr(c) for c in range(ord("A"), ord("Z") + 1)]
-# Testperson mit vollem A-Z-Satz. Mehrere Aufnahmen je Buchstabe stabilisieren
-# die Accuracy gegen den Zufall eines einzelnen (evtl. schlechten) Takes.
+# BEKANNTE Testperson mit vollem A-Z-Satz (steckt auch im Training -- bewusst,
+# siehe Modul-Docstring). Mehrere Aufnahmen je Buchstabe stabilisieren die
+# Accuracy gegen den Zufall eines einzelnen (evtl. schlechten) Takes.
 TEST_PERSON = "yannik"
 SAMPLES_PER_LETTER = 2
 # Gut trennbare Buchstaben (empirisch je 3/3 erkannt). Bewusst OHNE die
@@ -138,9 +146,11 @@ def test_preprocessor_emittiert_trainingsformat(ensure_hmm_model):
     )
 
 
-def test_end_to_end_erkennt_gesten(ensure_hmm_model):
-    """Kernnachweis: die komplette Live-Pipeline erkennt echte Aufnahmen ueber
-    alle 26 Buchstaben hinweg mit einer Gesamt-Accuracy oberhalb der Schwelle.
+def test_end_to_end_bekannte_person_erkennt_gesten(ensure_hmm_model):
+    """Kernnachweis (bekannte Person): die komplette Live-Pipeline erkennt echte
+    Aufnahmen ueber alle 26 Buchstaben hinweg mit einer Gesamt-Accuracy oberhalb
+    der Schwelle. Generalisierung auf unbekannte Personen testet separat
+    test_end_to_end_unknown_person.py.
     """
     cfg_raw = _load_config()
     cfg = {"config": cfg_raw}
@@ -219,6 +229,6 @@ if __name__ == "__main__":
     marker = prepare_hmm_model()
     test_modell_laedt_und_kennt_alle_buchstaben(marker)
     test_preprocessor_emittiert_trainingsformat(marker)
-    test_end_to_end_erkennt_gesten(marker)
+    test_end_to_end_bekannte_person_erkennt_gesten(marker)
     test_starke_buchstaben_werden_zuverlaessig_erkannt(marker)
     print("OK: End-to-End-Live-Klassifikation erkennt Gesten ueber die volle Pipeline.")
