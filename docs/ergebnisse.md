@@ -70,9 +70,20 @@ Die beiden Zahlen oben messen nur den **Klassifikator** auf gespeicherten
 Aufnahmen. Der Live-Modus hängt zusätzlich von Handerkennung und Segmentierung ab.
 Dieser Pfad ist getrennt abgesichert:
 
-- **Automatisch:** [`tests/test_end_to_end.py`](../tests/test_end_to_end.py) spielt
-  echte Aufnahmen durch die komplette Live-Pipeline (Detektor → Preprocessor → HMM)
-  und prüft die Erkennung — läuft in CI.
+- **Automatisch (bekannte Person):** [`tests/test_end_to_end.py`](../tests/test_end_to_end.py)
+  spielt echte Aufnahmen durch die komplette Live-Pipeline
+  (Detektor → Preprocessor → HMM) und prüft die Erkennung — läuft in CI.
+  Die Testperson steckt auch im Training: das ist ein Pipeline-/Regressionstest,
+  kein Generalisierungs-Nachweis.
+- **Automatisch (unbekannte Person, Issue #61):**
+  [`tests/test_end_to_end_unknown_person.py`](../tests/test_end_to_end_unknown_person.py)
+  trainiert ein Modell **ohne** die Testperson wayan (Aufnahmen ohne Personen-Tag
+  fliegen ebenfalls raus, weil nicht beweisbar ist, von wem sie stammen) und
+  schickt wayans Aufnahmen durch dieselbe Live-Pipeline. Bewertet wird das
+  tatsächlich **angezeigte** Label inklusive der `?`-Logik. Messlauf 2026-07-14:
+  **79,5 %** korrekt angezeigt (62/78), **11,5 %** als `?`, Rest Verwechslungen
+  (häufigste: Q→O). Die Testschwellen (≥ 65 % Accuracy, ≤ 30 % `?`) sind aus
+  dieser gemessenen Baseline abgeleitet.
 - **Echte Webcam:** ein dokumentierter Durchlauf (neue Geste live aufnehmen →
   trainieren → live erkennen), Protokoll in
   [`webcam-e2e-protokoll.md`](webcam-e2e-protokoll.md).
