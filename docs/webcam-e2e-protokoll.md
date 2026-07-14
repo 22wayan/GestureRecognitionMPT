@@ -33,9 +33,9 @@ python main.py --mode live
 > Build-Artefakt). Für die Demo gewollt — die neue Klasse muss ins Modell.
 
 > [!NOTE]
-> Aufnahmen landen in `recordings/Dreieck/`. Nur was in `recordings/<LABEL>/`
-> liegt, wird von `train.py` gelernt (`data_labeling()` schreibt abweichend nach
-> `data/{label}/`). Ein Take wird nur gespeichert, wenn ≥ 20 Frames mit Hand
+> Aufnahmen landen in `recordings/Dreieck/`. Auch `data_labeling()` schreibt nun
+> direkt nach `recordings/<LABEL>/`, sodass `train.py` alle Aufnahmewege ohne
+> Kopieren einliest. Ein Take wird nur gespeichert, wenn ≥ 20 Frames mit Hand
 > erkannt wurden.
 
 ## Protokoll (Durchlauf vom 2026-07-14)

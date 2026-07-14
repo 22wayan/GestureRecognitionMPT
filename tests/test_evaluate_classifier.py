@@ -44,17 +44,17 @@ def test_split_by_person():
         (dummy, "A", "yannik"),
         (dummy, "B", "yannik"),
         (dummy, "A", "wayan"),
-        (dummy, "C", None),  # alte Aufnahme ohne Person → Training
+        (dummy, "C", None),  # unbekannte Herkunft → aus Hold-out ausschliessen
     ]
     train, test = _split_by_person(samples, "yannik")
 
     # Die Holdout-Person ist KOMPLETT im Test und GAR NICHT im Training.
     assert len(test) == 2
-    assert len(train) == 2
+    assert len(train) == 1
     test_labels = sorted(label for _, label in test)
     train_labels = sorted(label for _, label in train)
     assert test_labels == ["A", "B"]
-    assert train_labels == ["A", "C"]
+    assert train_labels == ["A"]
 
 
 if __name__ == "__main__":

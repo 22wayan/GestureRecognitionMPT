@@ -158,10 +158,10 @@ Datenordner verschoben wird.
 
 ### Datenstruktur und Ordnerorganisation
 
-Gespeicherte Aufnahmen liegen nach Label getrennt im Ordner `data/`:
+Gespeicherte Aufnahmen liegen nach Label getrennt im Ordner `recordings/`:
 
 ```
-data/
+recordings/
 ├── A/
 │   ├── recording_1.pkl
 │   ├── recording_2.pkl
@@ -172,7 +172,7 @@ data/
 └── ...
 ```
 
-- Jedes Label bekommt einen eigenen Unterordner `data/{label}/`.
+- Jedes Label bekommt einen eigenen Unterordner `recordings/{label}/`.
 - Jede Aufnahme wird einzeln als `recording_{i}.pkl` gespeichert.
 - Die Nummer `{i}` zaehlt fortlaufend hoch. Bestehende Aufnahmen werden nie
   ueberschrieben.
@@ -347,7 +347,8 @@ Rauschen führen können.
 
 ### `sequence_length_histogram.png`
 
-Histogramm der Sequenzlängen (Anzahl Frames nach Bereinigung) pro Klasse.
+Histogramm der echten segmentierten Sequenzlängen vor dem Resampling pro Klasse.
+Für das Training werden diese Sequenzen anschließend weiterhin auf 48 Punkte gebracht.
 
 **Interpretation:** Die meisten Klassen liegen im Bereich von ca. 50–125
 Frames mit einer relativ engen, eingipfligen Verteilung — die Geste wird
@@ -388,12 +389,12 @@ je 15+ Takes pro Buchstabe und Person):
 | **Standard** | bekannte Personen, neue Aufnahmen | **92 %** |
 | **Neue Person** | eine Person komplett aus dem Training rausgehalten | **⌀ 73 %** |
 
-*(Messlauf 2026-07-14, Commit `fec4a5e` — nach der gemeinsamen Segmentierung (#58),
+*(Messlauf 2026-07-14, nach gemeinsamer Segmentierung und striktem Personen-Hold-out,
 `n_components=10`, Neue-Person gemittelt über alle 4 Personen als Hold-out.
 Pro-Person-Tabelle + Reproduktion: [docs/ergebnisse.md](docs/ergebnisse.md).)*
 
 Die zweite Zahl ist die ehrliche Erwartung für eine **völlig neue Person**,
-deren Aufnahmen das Modell nie gesehen hat (je nach Person 63–80 %). Nimmt
+deren Aufnahmen das Modell nie gesehen hat (je nach Person 62–87 %). Nimmt
 die neue Person dagegen erst ein paar eigene Aufnahmen auf und trainiert
 mit (`schnell_aufnahme.py` + `python train.py`), gilt die erste Zahl.
 
@@ -462,12 +463,12 @@ dokumentiert: **[docs/teambeitraege.md](docs/teambeitraege.md)**.
 Was das System (noch) nicht gut kann — und was man daraus machen könnte:
 
 - **Neue Personen:** im Mittel ~73 % Accuracy ohne eigene Trainingsdaten (je nach
-  Person 63–80 %). Jede Person malt anders; mit ein paar eigenen Aufnahmen
+  Person 62–87 %). Jede Person malt anders; mit ein paar eigenen Aufnahmen
   (`schnell_aufnahme.py` + `train.py`) steigt die Erkennung auf ~92 %.
   *Erweiterung:* mehr Personen
   im Trainingsdatensatz.
 - **Ähnliche Bewegungen:** Buchstaben, deren Spur fast gleich aussieht
-  (z. B. V/W, P/F), bleiben die häufigsten Verwechslungen. *Erweiterung:*
+  (z. B. O/G/Q oder C/Z), bleiben die häufigsten Verwechslungen. *Erweiterung:*
   zusätzliche Features (z. B. Richtungswinkel) oder gezielt mehr Aufnahmen
   für diese Paare.
 - **Ein Finger, eine Hand:** Es wird nur die Zeigefingerspitze einer Hand

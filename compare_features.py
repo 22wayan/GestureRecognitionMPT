@@ -32,6 +32,7 @@ from GestureRecognition.labeling import (
     _extract_trajectory,
     _is_outlier,
     _to_features,
+    segment_trajectory,
 )
 from GestureRecognition.visualization import _person_from_filename
 
@@ -63,6 +64,10 @@ def _load_raw_samples() -> list[tuple[np.ndarray, str, str | None]]:
             traj = _extract_trajectory(recording, finger_idx=8)
             if traj is None or len(traj) < MIN_LENGTH:
                 continue
+            segments = segment_trajectory(traj, min_steps=MIN_LENGTH)
+            if not segments:
+                continue
+            traj = max(segments, key=len)
             if _is_outlier(traj, MAX_JUMP):
                 continue
             samples.append((traj, label, _person_from_filename(pkl_file)))
@@ -118,7 +123,11 @@ def _holdout_accuracies(samples) -> dict[str, float]:
     persons = sorted({p for _, _, p in samples if p is not None})
     result = {}
     for person in persons:
-        train_pairs = [(t, l) for t, l, p in samples if p != person]
+        # Unbekannte Dateinamen nicht ins Training schmuggeln: ihre Person ist
+        # nicht beweisbar und koennte gerade die Hold-out-Person sein.
+        train_pairs = [
+            (t, l) for t, l, p in samples if p is not None and p != person
+        ]
         test_pairs = [(t, l) for t, l, p in samples if p == person]
         if not test_pairs or not train_pairs:
             continue

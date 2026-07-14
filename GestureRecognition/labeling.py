@@ -439,6 +439,7 @@ def clean_recordings(
     finger_idx: int = 8,
     min_length: int = 15,
     max_jump: float = 0.15,
+    resample_length: int | None = RESAMPLE_LENGTH,
 ) -> dict[str, list[np.ndarray]]:
     """
     Lädt alle Aufnahmen aus einem Verzeichnis und filtert fehlerhafte heraus.
@@ -457,6 +458,9 @@ def clean_recordings(
         Minimale Anzahl valider Frames nach dem Trimmen.
     max_jump : float
         Maximaler erlaubter Frame-zu-Frame-Sprung (normalisierte Koordinaten).
+    resample_length : int or None
+        Ziellaenge der Sequenzen. ``None`` behaelt die echte segmentierte
+        Laenge, etwa fuer die Datenvisualisierung. Das Training nutzt 48 Punkte.
 
     Returns
     -------
@@ -505,7 +509,7 @@ def clean_recordings(
                 logger.info("[%s] %s verworfen: Tracking-Sprung erkannt", label, pkl_file.name)
                 continue
 
-            traj = _to_features(traj)
+            traj = _to_features(traj, resample_length=resample_length)
             kept.append(traj)
 
         total = sum(stats.values()) + len(kept)
@@ -587,7 +591,8 @@ def data_labeling(times: int, label: str):
     Es werden nacheinander Aufnahmen gemacht. Pro Aufnahme entscheidet der
     Benutzer, ob die Aufnahme gespeichert, verworfen oder der ganze Vorgang
     abgebrochen wird. Gespeicherte Aufnahmen landen unter
-    ``data/{label}/recording_{i}.pkl``.
+    ``recordings/{label}/recording_{i}.pkl``. Damit werden sie vom normalen
+    Trainingslauf ohne Kopieren gefunden.
 
     Parameters
     ----------
@@ -597,8 +602,9 @@ def data_labeling(times: int, label: str):
         Name der Geste / Klasse (z. B. "A").
     """
 
-    # Zielordner fuer dieses Label, z. B. data/A
-    label_dir = os.path.join("data", label)
+    # Derselbe Wurzelordner wie bei dataset_building: Aufnehmen und Trainieren
+    # passen dadurch ohne manuellen Kopierschritt zusammen.
+    label_dir = os.path.join("recordings", label)
     # Ordner anlegen, falls er noch nicht existiert (kein Fehler, wenn schon da)
     os.makedirs(label_dir, exist_ok=True)
 
