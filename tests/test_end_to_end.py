@@ -35,7 +35,6 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -45,7 +44,6 @@ sys.path.insert(0, str(ROOT))
 from GestureRecognition.modules.preprocessor import Preprocessor  # noqa: E402
 from GestureRecognition.modules.hiddenmarkov import HMMModule  # noqa: E402
 
-MODEL_PATH = ROOT / "data" / "hmm.pkl"
 ALPHABET = [chr(c) for c in range(ord("A"), ord("Z") + 1)]
 # Testperson mit vollem A-Z-Satz. Mehrere Aufnahmen je Buchstabe stabilisieren
 # die Accuracy gegen den Zufall eines einzelnen (evtl. schlechten) Takes.
@@ -110,14 +108,7 @@ def _classify(module: HMMModule, features: np.ndarray, cfg_raw: dict) -> dict:
     return result["markov"]
 
 
-requires_model = pytest.mark.skipif(
-    not MODEL_PATH.exists(),
-    reason="data/hmm.pkl fehlt -- zuerst `python train.py` ausfuehren.",
-)
-
-
-@requires_model
-def test_modell_laedt_und_kennt_alle_buchstaben():
+def test_modell_laedt_und_kennt_alle_buchstaben(ensure_hmm_model):
     """HMMModule.start() muss das Modell laden und mindestens alle 26 Buchstaben
     kennen. Zusaetzliche Klassen (z.B. eine selbst aufgenommene Geste) sind erlaubt
     -- das System soll ja um neue Gesten erweiterbar sein.
@@ -130,8 +121,7 @@ def test_modell_laedt_und_kennt_alle_buchstaben():
     assert not fehlend, f"Buchstaben fehlen im Modell: {fehlend} (vorhanden: {sorted(classes)})"
 
 
-@requires_model
-def test_preprocessor_emittiert_trainingsformat():
+def test_preprocessor_emittiert_trainingsformat(ensure_hmm_model):
     """Der Preprocessor muss live das exakte Trainingsformat (N, 3) liefern --
     (x, y, velocity). Ein anderes Format wuerde den Classifier live blind machen
     (Score -inf -> immer '?'). Regressionsschutz fuer den frueheren 4-Feature-Bug.
@@ -148,8 +138,7 @@ def test_preprocessor_emittiert_trainingsformat():
     )
 
 
-@requires_model
-def test_end_to_end_erkennt_gesten():
+def test_end_to_end_erkennt_gesten(ensure_hmm_model):
     """Kernnachweis: die komplette Live-Pipeline erkennt echte Aufnahmen ueber
     alle 26 Buchstaben hinweg mit einer Gesamt-Accuracy oberhalb der Schwelle.
     """
@@ -188,8 +177,7 @@ def test_end_to_end_erkennt_gesten():
     )
 
 
-@requires_model
-def test_starke_buchstaben_werden_zuverlaessig_erkannt():
+def test_starke_buchstaben_werden_zuverlaessig_erkannt(ensure_hmm_model):
     """Gut trennbare Buchstaben muessen ueber mehrere Samples zuverlaessig erkannt
     werden. Bewusst eine Trefferquote statt Einzelsample-Gleichheit: ein einzelnes
     Sample kann durch Formaehnlichkeit kippen (z.B. V<->U), ohne dass der Live-Pfad
@@ -223,8 +211,14 @@ def test_starke_buchstaben_werden_zuverlaessig_erkannt():
 
 
 if __name__ == "__main__":
-    test_modell_laedt_und_kennt_alle_buchstaben()
-    test_preprocessor_emittiert_trainingsformat()
-    test_end_to_end_erkennt_gesten()
-    test_starke_buchstaben_werden_zuverlaessig_erkannt()
+    # Standalone: Modell sicherstellen (trainiert bei Bedarf), dann Tests direkt
+    # aufrufen. Die ensure_hmm_model-Fixture gibt es nur unter pytest -- hier
+    # bereiten wir das Modell mit derselben Logik selbst vor.
+    from conftest import prepare_hmm_model
+
+    marker = prepare_hmm_model()
+    test_modell_laedt_und_kennt_alle_buchstaben(marker)
+    test_preprocessor_emittiert_trainingsformat(marker)
+    test_end_to_end_erkennt_gesten(marker)
+    test_starke_buchstaben_werden_zuverlaessig_erkannt(marker)
     print("OK: End-to-End-Live-Klassifikation erkennt Gesten ueber die volle Pipeline.")
