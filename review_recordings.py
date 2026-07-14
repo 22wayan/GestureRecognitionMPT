@@ -4,11 +4,9 @@ Prueft die aufgenommenen Gesten und sortiert unbrauchbare aus.
 Eine Aufnahme ist nur dann brauchbar, wenn sie spaeter auch wirklich im
 Datensatz landet. Darum pruefen wir hier genau dasselbe wie ``dataset_building``:
 
-  1. Lang genug?      -> mindestens ``min_length`` Frames (nach dem Trimmen
-                         der Frames ohne Hand am Anfang/Ende)
-  2. Keine Spruenge?  -> kein Sprung der Fingerspitze > ``max_jump`` von einem
-                         Frame zum naechsten (typischer Tracking-Fehler)
-  3. Keine Luecke?    -> kein NaN mitten in der Bewegung (Hand kurz verloren)
+  1. Lang genug?      -> mindestens ``min_length`` Frames
+  2. Geste gefunden?  -> gleiche Segmentierung wie im Live-Modus
+  3. Keine Spruenge?  -> kein Tracking-Sprung ueber ``max_jump``
 
 Es werden NUR die eigenen Aufnahmen einer Person angefasst, also Dateien wie
 ``A-yannik-1.pkl``. Die geteilten Team-Altdaten (``A-1773050612....pkl``)
@@ -27,7 +25,13 @@ from pathlib import Path
 
 import numpy as np
 
-from GestureRecognition.labeling import _extract_trajectory, _is_outlier, ALPHABET
+from GestureRecognition.labeling import (
+    ALPHABET,
+    _extract_trajectory,
+    _is_outlier,
+    _to_features,
+    segment_trajectory,
+)
 
 
 def biggest_jump(traj):
@@ -60,10 +64,18 @@ def check_recording(path, finger_idx, min_length, max_jump):
         return False, "keine Hand erkannt"
     if len(traj) < min_length:
         return False, f"zu kurz ({len(traj)} < {min_length} Frames)"
+
+    # Exakt wie clean_recordings: Anfahrt und Stillstand abschneiden und bei
+    # mehreren Fragmenten die laengste, eigentliche Geste pruefen.
+    segments = segment_trajectory(traj, min_steps=min_length)
+    if not segments:
+        return False, "keine Geste segmentiert"
+    traj = max(segments, key=len)
+
     if _is_outlier(traj, max_jump):
         return False, f"Tracking-Sprung ({biggest_jump(traj):.3f})"
-    if np.isnan(traj).any():
-        return False, "NaN mittendrin (Hand kurz verloren)"
+    if not np.isfinite(_to_features(traj)).all():
+        return False, "ungueltige Zahlenwerte"
     return True, "OK"
 
 

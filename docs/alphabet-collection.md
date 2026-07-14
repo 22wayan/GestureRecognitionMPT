@@ -18,9 +18,9 @@ das Modell trainiert werden kann.
 | `GestureRecognition/labeling.py` | Neue Funktion `collect_alphabet(person, recordings_dir="recordings")`. Aufnahme-Logik einer Einzelaufnahme in `_record_one_take()` extrahiert (von `data_labeling` mitbenutzt). |
 | `README.md` | Abschnitt „Alphabet-Sammlung im Team". |
 
-Wichtig: `data_labeling`, `dataset_building`, `clean_recordings` und die
-Pipeline bleiben **funktional unverändert** – `data_labeling` nutzt nur denselben
-neuen Helfer (gleiches Verhalten wie zuvor).
+`data_labeling` nutzt denselben Aufnahmehelfer und speichert wie die übrigen
+Workflows direkt unter `recordings/<Label>/`. Dadurch findet `train.py` neue
+Aufnahmen ohne einen manuellen Kopierschritt.
 
 ## Wie benutzen
 

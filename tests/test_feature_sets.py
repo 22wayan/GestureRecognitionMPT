@@ -40,6 +40,11 @@ def test_spaltenzahl():
     assert _to_features(traj, feature_set="xydxdyv").shape == (RESAMPLE_LENGTH, 5)
 
 
+def test_visualisierung_kann_originale_laenge_behalten():
+    traj = _beispiel_trajektorie(n=73)
+    assert _to_features(traj, resample_length=None).shape == (73, 3)
+
+
 def test_speed_passt_zu_richtung():
     feats = _to_features(_beispiel_trajektorie(), feature_set="xydxdyv")
     dx, dy, speed = feats[:, 2], feats[:, 3], feats[:, 4]
@@ -69,6 +74,7 @@ def test_unbekanntes_set_wird_abgelehnt():
 
 if __name__ == "__main__":
     test_spaltenzahl()
+    test_visualisierung_kann_originale_laenge_behalten()
     test_speed_passt_zu_richtung()
     test_default_folgt_zentraler_wahl()
     test_unbekanntes_set_wird_abgelehnt()

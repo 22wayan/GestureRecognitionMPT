@@ -8,8 +8,8 @@ Alle Zahlen stammen aus der Funktion
 [`evaluate_classifier()`](../GestureRecognition/visualization.py) und wurden auf
 unserem eigenen Datensatz gemessen (26 Klassen A–Z, Aufnahmen von 4 Personen).
 
-> **Messlauf:** 2026-07-14, Commit `fec4a5e` (nach der gemeinsamen Segmentierung
-> aus #58 — Training schneidet die Geste jetzt wie der Live-Modus zu). Konfiguration:
+> **Messlauf:** 2026-07-14, nach gemeinsamer Segmentierung und striktem
+> Personen-Hold-out. Konfiguration:
 > ein GaussianHMM pro Klasse, `n_components=10`, `covariance_type="diag"`, `min_covar=0.03`,
 > `test_size=0.2`, `random_state=42`. Gemessen auf den **26 A–Z-Klassen**; die
 > Demo-Geste `recordings/Dreieck` ist ausgeklammert (nicht Teil des Alphabets) und
@@ -49,17 +49,19 @@ Das ist die *optimistische* Zahl.
 Hier halten wir **eine ganze Person komplett aus dem Training heraus** und testen
 das Modell nur an dieser Person. Das Modell hat diese Hand also **noch nie
 gesehen** – genau wie in der Prüfung, wenn der Prüfer live neue Gesten aufnimmt.
+Aufnahmen ohne Personen-Tag werden aus dem Hold-out-Training ausgeschlossen,
+weil ihre Herkunft nicht sicher belegt werden kann.
 Wir machen das der Reihe nach für **alle vier Personen**:
 
 | Zurückgehaltene Person | Getestete Gesten | Neue-Person-Accuracy |
 |---|---:|---:|
-| wayan  | ~440 | **80 %** |
-| arian  | ~440 | **80 %** |
-| yannik | ~440 | **70 %** |
-| Azad   | ~390 | **63 %** |
+| wayan  | 440 | **87 %** |
+| arian  | 316 | **74 %** |
+| yannik | 436 | **62 %** |
+| Azad   | 333 | **70 %** |
 | **Mittel über alle 4** | | **73 %** |
 
-> **Ergebnis: im Mittel 73 %** (Minimum 63 % bei Azad, Maximum 80 %).
+> **Ergebnis: im Mittel 73 %** (Minimum 62 % bei yannik, Maximum 87 % bei wayan).
 
 Das ist die *ehrliche* Zahl für die Prüfungssituation — **außer** die neue
 Person nimmt vorher ein paar eigene Aufnahmen auf und trainiert mit
@@ -117,8 +119,8 @@ Modell verwechselt.
   Je dunkler die Diagonale, desto besser.
 - Jede Zahl **neben** der Diagonale ist eine **Verwechslung**.
 
-Beispiel: In der Zeile „P" steht eine „3" in der Spalte „F". Das heißt:
-**3-mal wurde ein „P" gemacht, aber das Modell hat „F" erkannt.**
+Beispiel: In der Zeile „O" steht eine „3" in der Spalte „G". Das heißt:
+**3-mal wurde ein „O" gemacht, aber das Modell hat „G" erkannt.**
 
 ---
 
@@ -178,7 +180,7 @@ for person in ["yannik", "wayan", "arian", "Azad"]:
         held_out_person=person,                # diese Person wird komplett rausgehalten
     )
     print(person, round(r["accuracy_new_person"], 3), round(r["accuracy_standard"], 3))
-# yannik 0.700 0.916 | wayan 0.795 0.916 | arian 0.795 0.916 | Azad 0.625 0.916
+# yannik 0.622 0.916 | wayan 0.866 0.916 | arian 0.737 0.916 | Azad 0.697 0.916
 ```
 
 Die drei Demo-GIFs im README entstehen übrigens genauso reproduzierbar:
@@ -198,7 +200,7 @@ python demo_gif.py            # nutzt data/hmm.pkl, schreibt images/demo_*.gif
 - Bekannte Personen werden zuverlässig erkannt (**92 %**, 11 von 26
   Buchstaben sogar fehlerfrei).
 - Eine völlig neue Person ist deutlich schwerer (**im Mittel 73 %**, je nach
-  Person 63–80 %) – das ist die ehrliche Erwartung, wenn jemand ohne eigene
+  Person 62–87 %) – das ist die ehrliche Erwartung, wenn jemand ohne eigene
   Trainingsdaten loslegt. Mit ein paar eigenen Aufnahmen + `python train.py` gilt
   die 92-%-Zahl.
 - Verwechselt werden vor allem **runde/ähnlich verlaufende Buchstaben** (O/G/Q,

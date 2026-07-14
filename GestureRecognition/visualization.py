@@ -15,6 +15,7 @@ from GestureRecognition.labeling import (
     _to_features,
     clean_recordings,
     dataset_building,
+    segment_trajectory,
 )
 
 logger = logging.getLogger(__name__)
@@ -188,8 +189,14 @@ def visualize_dataset(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Fuer die Exploration bleiben die echten segmentierten Laengen erhalten.
+    # Der Trainingspfad resampelt weiterhin unveraendert auf 48 Punkte.
     dataset = clean_recordings(
-        recordings_dir, finger_idx=finger_idx, min_length=min_length, max_jump=max_jump
+        recordings_dir,
+        finger_idx=finger_idx,
+        min_length=min_length,
+        max_jump=max_jump,
+        resample_length=None,
     )
     dataset = {label: trajs for label, trajs in dataset.items() if trajs}
 
@@ -234,9 +241,9 @@ def _load_by_person(
     """
     Lädt alle Aufnahmen und behält je Sequenz den Personen-Tag.
 
-    Die Filter sind identisch zu :func:`dataset_building` (zu kurz /
-    Tracking-Sprung / NaN werden verworfen), damit die Neue-Person-Bewertung
-    dieselben Features nutzt wie das Standard-Training.
+    Segmentierung und Filter sind identisch zu :func:`dataset_building`, damit
+    die Neue-Person-Bewertung dieselben Gestenausschnitte und Features nutzt wie
+    das Standard-Training.
 
     Returns
     -------
@@ -258,6 +265,11 @@ def _load_by_person(
             traj = _extract_trajectory(recording, finger_idx)
             if traj is None or len(traj) < min_length:
                 continue
+            segments = segment_trajectory(traj, min_steps=min_length)
+            if not segments:
+                continue
+            # Wie beim Datensatzbau ist das laengste Segment die eigentliche Geste.
+            traj = max(segments, key=len)
             if _is_outlier(traj, max_jump):
                 continue
             traj = _to_features(traj)  # resample + normalize + velocity (wie dataset_building)
@@ -275,11 +287,15 @@ def _split_by_person(
     """
     Teilt die Samples anhand der Person in Train/Test.
 
-    Test = alle Sequenzen von ``held_out_person``; Train = alle übrigen
-    (inklusive alter Aufnahmen ohne Namen). So testet man gegen eine Person,
-    die das Modell nie gesehen hat — das simuliert den Prüfer.
+    Test = alle Sequenzen von ``held_out_person``; Train = alle eindeutig
+    benannten übrigen Personen. Alte Aufnahmen ohne Personen-Tag werden bewusst
+    ausgeschlossen, weil ihre Herkunft nicht beweisbar ist.
     """
-    train = [(traj, label) for traj, label, person in samples if person != held_out_person]
+    train = [
+        (traj, label)
+        for traj, label, person in samples
+        if person is not None and person != held_out_person
+    ]
     test = [(traj, label) for traj, label, person in samples if person == held_out_person]
     return train, test
 

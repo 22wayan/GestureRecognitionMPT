@@ -21,6 +21,7 @@ from pathlib import Path
 
 import cv2
 import mediapipe as mp
+import yaml
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision
 
@@ -31,7 +32,13 @@ ALPHABET = [chr(c) for c in range(ord("A"), ord("Z") + 1)]
 TIMES = 15
 FINGER_IDX = 8          # Zeigefingerspitze
 MIN_FRAMES = 20         # weniger -> Take zu kurz, wird nicht gespeichert
-FLIP = True             # wie config.yml (webcam.flip: True)
+
+
+def load_webcam_settings(config_path: Path = HERE / "config.yml") -> tuple[int, bool]:
+    """Liest Kameraindex und Spiegelung aus derselben Konfiguration wie live."""
+    with open(config_path, encoding="utf-8") as f:
+        webcam = (yaml.safe_load(f) or {}).get("webcam", {})
+    return int(webcam.get("deviceIndex", 0)), bool(webcam.get("flip", True))
 
 
 def sanitize(name: str) -> str:
@@ -142,6 +149,11 @@ def main():
     )
     parser.add_argument("--times", type=int, default=TIMES,
                         help=f"Wie viele Aufnahmen pro Zeichen (Standard {TIMES}).")
+    parser.add_argument(
+        "--device-index",
+        type=int,
+        help="Kameraindex; ohne Angabe wird webcam.deviceIndex aus config.yml benutzt.",
+    )
     args = parser.parse_args()
 
     person = sanitize(args.person if args.person else input("Dein Name / Kuerzel: ").strip())
@@ -160,9 +172,12 @@ def main():
     print(f"Aufnahme fuer: {person}  |  Zeichen: {', '.join(symbols)}  |  je {times}x")
 
     detector = make_detector()
-    cap = cv2.VideoCapture(0)
+    configured_index, flip = load_webcam_settings()
+    device_index = configured_index if args.device_index is None else args.device_index
+    cap = cv2.VideoCapture(device_index)
     if not cap.isOpened():
-        print("Kamera nicht verfuegbar (Berechtigung?).")
+        print(f"Kamera {device_index} nicht verfuegbar (Index/Berechtigung pruefen).")
+        detector.close()
         return
     for _ in range(8):        # warmup
         cap.read()
@@ -189,7 +204,7 @@ def main():
         ok, frame = cap.read()
         if not ok or frame is None:
             continue
-        if FLIP:
+        if flip:
             frame = cv2.flip(frame, 1)
         h, w = frame.shape[:2]
 
