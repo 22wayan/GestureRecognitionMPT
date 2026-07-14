@@ -108,11 +108,13 @@ class HandDetector(Module):
         Hier wird der MediaPipe HandLandmarker geladen.
 
         MediaPipe arbeitet intern in zwei Schritten:
+
         1. Palm detection: schnelle Handsuche im Bild
         2. Landmark regression: 21 Handpunkte für jede erkannte Hand
 
         Wir setzen ``num_hands=2``, damit ein bis zwei Hände erkannt werden.
         Die Confidence-Werte sind bewusst moderat eingestellt:
+
         - ``min_hand_detection_confidence=0.6``: zuverlässig, aber nicht zu streng,
           damit die Live-Erkennung noch schnell arbeitet.
         - ``min_hand_presence_confidence=0.5``: lässt schwächere Hände zu,

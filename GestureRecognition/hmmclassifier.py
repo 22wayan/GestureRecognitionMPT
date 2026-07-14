@@ -42,7 +42,7 @@ class HMMClassifier:
 
     Hyperparameter
     --------------
-    - ``n_components=8``: Acht Zustaende pro Buchstabe. Mehr Zustaende koennen die
+    - ``n_components=10``: Zehn Zustaende pro Buchstabe. Mehr Zustaende koennen die
       Form einer Geste genauer beschreiben. Zusammen mit dem Resampling (jede Geste
       bekommt gleich viele Punkte, siehe ``labeling._to_features``) steigt die
       Genauigkeit deutlich (von ca. 72% auf ca. 90%). Bei sehr wenig Daten kann ein
@@ -81,7 +81,7 @@ class HMMClassifier:
 
     def __init__(
         self,
-        n_components: int = 8,
+        n_components: int = 10,
         covariance_type: str = "diag",
         min_covar: float = 0.03,
         n_iter: int = 100,
