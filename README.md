@@ -385,15 +385,18 @@ je 15+ Takes pro Buchstabe und Person):
 
 | Test | Bedeutung | Accuracy |
 |---|---|---|
-| **Standard** | bekannte Personen, neue Aufnahmen | **~90 %** |
-| **Neue Person** | eine Person komplett aus dem Training rausgehalten | **~60 %** |
+| **Standard** | bekannte Personen, neue Aufnahmen | **93 %** |
+| **Neue Person** | eine Person komplett aus dem Training rausgehalten | **⌀ 73 %** |
+
+*(Messlauf 2026-07-14, `n_components=10`, Neue-Person gemittelt über alle 4
+Personen als Hold-out. Pro-Person-Tabelle + Reproduktion: [docs/ergebnisse.md](docs/ergebnisse.md).)*
 
 Die zweite Zahl ist die ehrliche Erwartung für eine **völlig neue Person**,
-deren Aufnahmen das Modell nie gesehen hat (je nach Person 58–77 %). Nimmt
+deren Aufnahmen das Modell nie gesehen hat (je nach Person 63–80 %). Nimmt
 die neue Person dagegen erst ein paar eigene Aufnahmen auf und trainiert
 mit (`schnell_aufnahme.py` + `python train.py`), gilt die erste Zahl.
 
-Der große Sprung von früher ~79 %/36 % auf ~90 %/60 % kam durch drei Dinge:
+Der große Sprung von früher ~79 %/36 % auf **~93 %/73 %** kam durch drei Dinge:
 Resampling auf feste Gestenlänge, `min_covar` gegen den HMM-Kollaps und
 deutlich mehr Trainingsdaten (vier Personen statt einer) — Details in
 [docs/design-entscheidungen.md](docs/design-entscheidungen.md).
@@ -457,9 +460,10 @@ dokumentiert: **[docs/teambeitraege.md](docs/teambeitraege.md)**.
 
 Was das System (noch) nicht gut kann — und was man daraus machen könnte:
 
-- **Neue Personen:** ~60 % Accuracy ohne eigene Trainingsdaten. Jede Person
-  malt anders; mit ein paar eigenen Aufnahmen (`schnell_aufnahme.py` +
-  `train.py`) steigt die Erkennung auf ~90 %. *Erweiterung:* mehr Personen
+- **Neue Personen:** im Mittel ~73 % Accuracy ohne eigene Trainingsdaten (je nach
+  Person 63–80 %). Jede Person malt anders; mit ein paar eigenen Aufnahmen
+  (`schnell_aufnahme.py` + `train.py`) steigt die Erkennung auf ~93 %.
+  *Erweiterung:* mehr Personen
   im Trainingsdatensatz.
 - **Ähnliche Bewegungen:** Buchstaben, deren Spur fast gleich aussieht
   (z. B. V/W, P/F), bleiben die häufigsten Verwechslungen. *Erweiterung:*
